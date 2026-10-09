@@ -1,86 +1,35 @@
-# AICIC Concepts Attendance Management System - Backend
+# AICIC Concepts Attendance Management System
 
-Production-ready REST API backend for physical training programmes and courses at AICIC Concepts.
+A full-stack web application designed to streamline physical classroom verification for training cohorts. The system features live QR code polling, real-time metrics, and role-based access for admins, teachers, and students.
 
 ## Tech Stack
-- **Framework**: FastAPI (Python 3.10+)
-- **Database**: PostgreSQL (with SQLAlchemy 2.0 ORM)
-- **Authentication**: JWT Bearer tokens with Bcrypt password hashing
-- **Security**: Cryptographically secure session tokens via `secrets.token_hex(16)`
+*   **Frontend:** React, TypeScript, Vite, Tailwind CSS, Lucide React
+*   **Backend:** Python, FastAPI, SQLAlchemy, PostgreSQL (Neon Serverless Postgres)
+*   **Authentication:** JWT (JSON Web Tokens) with Bcrypt password hashing
+
+## Features
+*   **Role-Based Access:** Distinct portals for Administrators and Teachers.
+*   **Live Attendance:** Instructors can generate temporary QR codes and links for physical check-ins.
+*   **Real-Time Metrics:** Live polling updates the dashboard automatically as students scan and check-in.
+*   **Teacher Registration:** Instructors can securely sign up and assign themselves to their respective training programmes.
 
 ---
 
-## 1. Database Setup (PostgreSQL)
+## Local Development Setup
 
-### Option A: Local PostgreSQL
-Create a PostgreSQL database:
-```sql
-CREATE DATABASE aicic_attendance;
-CREATE USER aicic_user WITH ENCRYPTED PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE aicic_attendance TO aicic_user;
-```
+Because this is a decoupled full-stack application, you need to run the backend and frontend in two separate terminal windows.
 
-### Option B: Docker Compose
-```bash
-docker run --name aicic-postgres -e POSTGRES_DB=aicic_attendance -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:15
-```
+### Prerequisites
+*   Node.js (v18+ recommended)
+*   Python 3.10+
+*   A [Neon.tech](https://neon.tech/) PostgreSQL database (or local PostgreSQL)
 
----
+### 1. Environment Configuration
+Create a `.env` file in the root of the project and add your database credentials and a secure random string for signing JWTs:
 
-## 2. Environment Configuration
-
-Create a `.env` file in the project root:
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/aicic_attendance
-JWT_SECRET=aicic_concepts_jwt_secret_key_change_in_production
-ACCESS_TOKEN_EXPIRE_MINUTES=10080
-DEFAULT_ATTENDANCE_WINDOW_MINUTES=10
-```
+# Database Connection
+DATABASE_URL="postgresql://<user>:<password>@<your-neon-endpoint>.neon.tech/aicic_attendance?sslmode=require"
 
----
-
-## 3. Installation & Database Initialization
-
-```bash
-# Create and activate virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r backend/requirements.txt
-
-# Run migrations / database initialization & demo data seeding
-python3 -m backend.seed
-```
-
----
-
-## 4. Run the FastAPI Development Server
-
-```bash
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Interactive API documentation will be available at:
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
-
----
-
-## 5. Seeded Credentials for Testing
-
-| Role | Email | Password |
-|---|---|---|
-| **Admin** | `admin@aicicconcepts.com` | `admin123Password!` |
-| **Teacher 1** | `grace.okafor@aicicconcepts.com` | `teacher123Password!` |
-| **Teacher 2** | `chidi.eze@aicicconcepts.com` | `teacher123Password!` |
-
-### Sample Students
-- `AICIC-2026-001`: Chinelo Adebayo
-- `AICIC-2026-002`: Emeka Nwosu
-- `AICIC-2026-003`: Fatima Bello
-- `AICIC-2026-004`: Tunde Bakare
-- `AICIC-2026-005`: Blessing Okon
-- `AICIC-2026-006`: David Obi
-- `AICIC-2026-009`: Mary James
-- `AICIC-2026-010`: John Doe
+# Security
+JWT_SECRET="your_generated_random_secret_string_here"

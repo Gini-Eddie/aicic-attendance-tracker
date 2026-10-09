@@ -1,0 +1,6 @@
+{
+  "name": "AICIC Attendance Management",
+  "description": "Attendance management system for AICIC Concepts physical training programmes and courses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
