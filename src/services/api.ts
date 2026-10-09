@@ -137,11 +137,15 @@ class ApiClient {
     return this.request(`/api/courses/${id}`);
   }
 
-  async createCourse(name: string, description?: string): Promise<Course> {
+  async createCourse(name: string, description?: string, cohort?: string): Promise<Course> {
     return this.request<Course>("/api/courses", {
       method: "POST",
-      body: JSON.stringify({ name, description })
+      body: JSON.stringify({ name, description, cohort })
     });
+  }
+
+  async updateCohort(courseId: string, cohort: string): Promise<{ cohort: string | null }> {
+    return this.request(`/api/courses/${courseId}/cohort`, { method: "PATCH", body: JSON.stringify({ cohort }) });
   }
 
   async assignTeacher(courseId: string, teacherId: string): Promise<{ message: string }> {

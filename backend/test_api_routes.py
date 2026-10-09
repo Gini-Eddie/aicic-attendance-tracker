@@ -100,6 +100,27 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(self.request("POST", "/api/auth/login", {"email": body["email"], "password": body["new_password"]}, user=None)[0], 200)
         self.assertEqual(self.request("GET", "/api/auth/me", user="admin")[1]["email"], "admin@example.com")
 
+    def test_admin_directory_and_cohorts(self):
+        teachers = self.request("GET", "/api/teachers")[1]
+        self.assertEqual(teachers[0]["courses"], [{"id": "course", "name": "Test Course"}])
+        courses = self.request("GET", "/api/courses")[1]
+        course = next(c for c in courses if c["id"] == "course")
+        self.assertEqual(course["teachers"][0]["name"], "Teacher")
+        self.assertIsNone(course["cohort"])
+        self.assertEqual(self.request("PATCH", "/api/courses/course/cohort", {"cohort": "Matrix 2026"}, user="teacher")[0], 403)
+        self.assertEqual(self.request("PATCH", "/api/courses/course/cohort", {"cohort": "Matrix 2026"})[0], 200)
+        self.request("POST", "/api/courses/course/students", {"student_id": "student"})
+        courses = self.request("GET", "/api/courses")[1]
+        course = next(c for c in courses if c["id"] == "course")
+        self.assertEqual(course["cohort"], "Matrix 2026")
+        self.assertEqual(course["enrolled_students_count"], 1)
+        students = self.request("GET", "/api/students")[1]
+        self.assertEqual(students[0]["courses"], [{"id": "course", "name": "Test Course"}])
+        status, created = self.request("POST", "/api/courses", {"name": "New Programme", "cohort": "New Cohort"})
+        self.assertEqual(status, 201, created)
+        course = next(c for c in self.request("GET", "/api/courses")[1] if c["id"] == created["id"])
+        self.assertEqual(course["cohort"], "New Cohort")
+
     def test_teachers_and_permissions(self):
         status, teachers = self.request("GET", "/api/teachers")
         self.assertEqual(status, 200)

@@ -11,9 +11,13 @@ from ..schemas import UserCreate, UserResponse
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
 
 
-@router.get("", response_model=List[UserResponse])
+@router.get("")
 def list_teachers(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
-    return db.query(User).filter(User.role == "teacher").all()
+    teachers = db.query(User).filter(User.role == "teacher").all()
+    return [{"id": teacher.id, "name": teacher.name, "email": teacher.email, "role": teacher.role,
+             "created_at": teacher.created_at,
+             "courses": [{"id": course.id, "name": course.name} for course in teacher.courses_taught]}
+            for teacher in teachers]
 
 
 @router.post("", response_model=UserResponse, status_code=201)

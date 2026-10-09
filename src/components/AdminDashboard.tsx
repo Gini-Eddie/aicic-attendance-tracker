@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { api } from "../services/api";
 import { AdminDashboardData, Course, Student, User } from "../types";
+import { GroupedStudents } from "./GroupedStudents";
 import { InvitationSettings } from "./InvitationSettings";
 import { 
   Users, 
@@ -22,18 +23,23 @@ import {
 } from "lucide-react";
 
 interface AdminDashboardProps {
+  initialTab?: "overview" | "courses" | "teachers" | "students";
   onInspectSession: (sessionId: string) => void;
   onViewStudentProfile: (studentId: string) => void;
   onSelectCourse: (courseId: string) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  initialTab = "overview",
   onInspectSession,
   onViewStudentProfile,
   onSelectCourse
 }) => {
   const [dashboardData, setDashboardData] = useState<AdminDashboardData | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "courses" | "teachers" | "students" | "enrollments">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "courses" | "teachers" | "students" | "enrollments">(initialTab);
+  useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
+  const [cohortEdits, setCohortEdits] = useState<Record<string, string>>({});
+  const [savingCohort, setSavingCohort] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Lists state
@@ -49,7 +55,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showAssignTeacherModal, setShowAssignTeacherModal] = useState(false);
 
   // Form states
-  const [courseForm, setCourseForm] = useState({ name: "", description: "" });
+  const [courseForm, setCourseForm] = useState({ name: "", description: "", cohort: "" });
   const [teacherForm, setTeacherForm] = useState({ name: "", email: "", password: "" });
   const [studentForm, setStudentForm] = useState({ fullName: "", email: "", studentCode: "" });
   const [enrollForm, setEnrollForm] = useState({ courseId: "", studentId: "" });
@@ -87,8 +93,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!courseForm.name) return;
     setSubmitting(true);
     try {
-      await api.createCourse(courseForm.name, courseForm.description);
-      setCourseForm({ name: "", description: "" });
+      await api.createCourse(courseForm.name, courseForm.description, courseForm.cohort);
+      setCourseForm({ name: "", description: "", cohort: "" });
       setShowCourseModal(false);
       await loadData();
     } catch (err: any) {
@@ -420,7 +426,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Course Name</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Description</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Current Cohort</th>
                   <th className="px-4 py-3 text-center font-semibold text-slate-600">Enrolled Students</th>
                   <th className="px-4 py-3 text-center font-semibold text-slate-600">Assigned Teachers</th>
                   <th className="px-4 py-3 text-right font-semibold text-slate-600">Action</th>
@@ -531,51 +537,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-xs">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Student Name</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Student Code</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Email</th>
-                  <th className="px-4 py-3 text-center font-semibold text-slate-600">Enrolled Courses</th>
-                  <th className="px-4 py-3 text-center font-semibold text-slate-600">Overall Rate</th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-600">Profile</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {students.map((stu) => (
-                  <tr key={stu.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-semibold text-slate-900">
-                      {stu.full_name}
-                    </td>
-                    <td className="px-4 py-3 font-mono font-medium text-slate-700">
-                      {stu.student_code}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">{stu.email}</td>
-                    <td className="px-4 py-3 text-center font-semibold text-slate-700">
-                      {(stu.courses || []).length} courses
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`font-bold px-2 py-0.5 rounded ${
-                        (stu.attendance_rate ?? 0) >= 80 ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"
-                      }`}>
-                        {stu.attendance_rate ?? 0}%
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => onViewStudentProfile(stu.id)}
-                        className="px-2.5 py-1 text-xs font-semibold bg-slate-100 hover:bg-sky-50 hover:text-sky-700 text-slate-800 rounded-lg"
-                      >
-                        Inspect
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <GroupedStudents students={students} courses={courses} onViewStudentProfile={onViewStudentProfile} />
         </div>
       )}
 
@@ -649,6 +611,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-900 mb-1">Create Training Course</h3>
             <p className="text-xs text-slate-500 mb-4">Register a new physical training cohort</p>
             <form onSubmit={handleCreateCourse} className="space-y-4">
+              <label className="block text-xs font-semibold text-slate-700">Current cohort<input maxLength={255} value={courseForm.cohort} onChange={e => setCourseForm({ ...courseForm, cohort: e.target.value })} placeholder="e.g. Matrix 2026" className="block w-full border border-slate-300 rounded-lg p-2 mt-1" /></label>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                   Course Name

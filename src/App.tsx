@@ -302,6 +302,7 @@ export default function App() {
             {/* Views 4+: Admin Direct Views (Courses, Teachers, Students) */}
             {currentUser.role === "admin" && (activeView === "courses" || activeView === "teachers" || activeView === "students") && (
               <AdminDashboard
+                initialTab={activeView as "courses" | "teachers" | "students"}
                 onInspectSession={(sessId) => setInspectSessionId(sessId)}
                 onViewStudentProfile={(stuId) => setInspectStudentId(stuId)}
                 onSelectCourse={handleOpenCourse}

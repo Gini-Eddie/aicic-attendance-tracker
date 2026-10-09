@@ -10,6 +10,7 @@ export interface User {
 }
 
 export interface Course {
+  cohort?: string | null;
   id: string;
   name: string;
   description?: string;

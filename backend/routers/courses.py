@@ -14,7 +14,7 @@ from .students import enroll_student, unenroll_student
 from ..schemas import SessionResponse
 from ..auth import require_teacher
 from ..permissions import require_course_access
-from ..models import Student
+from ..models import Student, CourseCohort
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 import uuid
@@ -72,6 +72,8 @@ def list_courses(current_user: User = Depends(get_current_user), db: Session = D
             "name": c.name,
             "description": c.description,
             "created_at": c.created_at,
+            "teachers": [{"id": teacher.id, "name": teacher.name, "email": teacher.email} for teacher in c.teachers],
+            "cohort": (db.get(CourseCohort, c.id).name if db.get(CourseCohort, c.id) else None),
             "enrolled_students_count": student_count,
             "total_sessions_count": len(sessions),
             "last_attendance_rate": last_rate,
@@ -140,6 +142,9 @@ def get_course(course_id: str, current_user: User = Depends(get_current_user), d
 def create_course(data: CourseCreate, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     course = Course(name=data.name.strip(), description=data.description)
     db.add(course)
+    db.flush()
+    if data.cohort and data.cohort.strip():
+        db.add(CourseCohort(course_id=course.id, name=data.cohort.strip()))
     db.commit()
     db.refresh(course)
     return course
@@ -168,3 +173,18 @@ def remove_teacher(course_id: str, teacher_id: str, current_user: User = Depends
     ).delete()
     db.commit()
     return {"message": "Teacher removed from course"}
+
+
+class CohortUpdate(BaseModel):
+    cohort: str = Field(max_length=255)
+
+@router.patch("/{course_id}/cohort")
+def update_cohort(course_id: str, data: CohortUpdate, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    require_course_access(db, current_user, course_id)
+    cohort = db.get(CourseCohort, course_id)
+    if not cohort:
+        cohort = CourseCohort(course_id=course_id)
+        db.add(cohort)
+    cohort.name = data.cohort.strip()
+    db.commit()
+    return {"cohort": cohort.name or None}

@@ -34,7 +34,7 @@ class CourseBase(BaseModel):
     description: Optional[str] = None
 
 class CourseCreate(CourseBase):
-    pass
+    cohort: Optional[str] = Field(default=None, max_length=255)
 
 class CourseResponse(CourseBase):
     id: str

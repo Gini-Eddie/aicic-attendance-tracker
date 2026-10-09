@@ -111,3 +111,9 @@ class AttendanceRecord(Base):
     __table_args__ = (
         UniqueConstraint("session_id", "student_id", name="uq_session_student_attendance"),
     )
+
+
+class CourseCohort(Base):
+    __tablename__ = "course_cohorts"
+    course_id = Column(String(64), ForeignKey("courses.id", ondelete="CASCADE"), primary_key=True)
+    name = Column(String(255), nullable=False)
