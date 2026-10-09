@@ -9,6 +9,8 @@ import {
   TeacherDashboardData
 } from "../types";
 
+const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+
 const TOKEN_KEY = "aicic_auth_token";
 const USER_KEY = "aicic_auth_user";
 
@@ -69,7 +71,7 @@ class ApiClient {
       headers["Authorization"] = `Bearer ${this.token}`;
     }
 
-    const res = await fetch(endpoint, {
+    const res = await fetch(`${API_ORIGIN}${endpoint}`, {
       ...options,
       headers
     });
@@ -270,7 +272,7 @@ class ApiClient {
     expires_at?: string;
     detail?: string;
   }> {
-    const res = await fetch(`/api/attendance/${token}`);
+    const res = await fetch(`${API_ORIGIN}/api/attendance/${token}`);
     const data = await readResponse(res);
     if (!res.ok) throw new Error(data.detail || "Could not load attendance session.");
     return data;
@@ -283,7 +285,7 @@ class ApiClient {
     course_name: string;
     checked_in_at: string;
   }> {
-    const res = await fetch(`/api/attendance/${token}/check-in`, {
+    const res = await fetch(`${API_ORIGIN}/api/attendance/${token}/check-in`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ student_code: studentCode })

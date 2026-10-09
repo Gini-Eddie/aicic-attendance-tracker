@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     DEFAULT_ATTENDANCE_WINDOW_MINUTES: int = 10
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
     TEACHER_INVITE_CODE_HASH: str = ""
     ADMIN_INVITE_CODE_HASH: str = ""
     INVITATION_ENCRYPTION_KEY: str = ""
