@@ -2,26 +2,41 @@
 
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  /* AICIC red accents and navy surfaces, with accessible button/text shades. */
+  --color-sky-50: #fff1f2;
+  --color-sky-100: #ffe4e6;
+  --color-sky-200: #fecdd3;
+  --color-sky-300: #fda4af;
+  --color-sky-400: #fb7185;
+  --color-sky-500: #ef4444;
+  --color-sky-600: #dc2626;
+  --color-sky-700: #b91c1c;
+  --color-sky-800: #991b1b;
+  --color-sky-900: #7f1d1d;
+  --color-sky-950: #450a0a;
+  --color-slate-800: #252347;
+  --color-slate-900: #151332;
+  --color-slate-950: #0f0d24;
 }
 
 body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 h1, h2, h3 { letter-spacing: -0.025em; }
 button, input, select, textarea { font-family: inherit; }
 button, a, input, select, textarea { transition: background-color 150ms, border-color 150ms, box-shadow 150ms; }
-:is(button, a, input, select, textarea):focus-visible { outline: 2px solid #0284c7; outline-offset: 3px; }
-::selection { background: #bae6fd; color: #0c4a6e; }
+:is(button, a, input, select, textarea):focus-visible { outline: 2px solid #dc2626; outline-offset: 3px; }
+::selection { background: #fecdd3; color: #450a0a; }
 
 /* Shared theme for the existing utility-based screens; QR images stay unchanged. */
 html { color-scheme: light; }
-html[data-theme="dark"] { color-scheme: dark; background: #0b1220; color: #e2e8f0; }
-html[data-theme="dark"] body { background: #0b1220; }
-html[data-theme="dark"] :is(.bg-white, .bg-slate-50, .bg-slate-100, [class~="bg-slate-100/70"], [class~="bg-slate-50/80"]) { background-color: #111c2e; }
+html[data-theme="dark"] { color-scheme: dark; background: #100f20; color: #e2e8f0; }
+html[data-theme="dark"] body { background: #100f20; }
+html[data-theme="dark"] :is(.bg-white, .bg-slate-50, .bg-slate-100, [class~="bg-slate-100/70"], [class~="bg-slate-50/80"]) { background-color: #19172b; }
 html[data-theme="dark"] :is(.bg-slate-200, .bg-slate-100) { background-color: #1e293b; }
 html[data-theme="dark"] :is(.text-slate-900, .text-slate-800, .text-slate-700) { color: #e2e8f0; }
 html[data-theme="dark"] :is(.text-slate-600, .text-slate-500, .text-slate-400) { color: #a8b8cc; }
 html[data-theme="dark"] :is(.border-slate-100, .border-slate-200, .border-slate-300) { border-color: #334155; }
-html[data-theme="dark"] :is(.bg-sky-50, .bg-sky-100) { background-color: #0c3149; }
-html[data-theme="dark"] :is(.text-sky-600, .text-sky-700, .text-sky-800) { color: #7dd3fc; }
+html[data-theme="dark"] :is(.bg-sky-50, .bg-sky-100) { background-color: #3d1821; }
+html[data-theme="dark"] :is(.text-sky-600, .text-sky-700, .text-sky-800) { color: #fda4af; }
 html[data-theme="dark"] :is(.bg-rose-50, .bg-rose-100) { background-color: #421b2a; }
 html[data-theme="dark"] :is(.text-rose-600, .text-rose-700, .text-rose-800) { color: #fda4af; }
 html[data-theme="dark"] :is(.bg-emerald-50, .bg-emerald-100, .bg-teal-100) { background-color: #10382f; }

@@ -234,9 +234,7 @@ export default function App() {
           /* Logged Out / Welcome Landing Screen */
           <div className="max-w-4xl mx-auto py-8">
             <div className="bg-white rounded-3xl p-8 sm:p-12 border border-slate-200 shadow-sm text-center">
-              <div className="w-16 h-16 rounded-2xl bg-slate-900 text-sky-400 flex items-center justify-center mx-auto mb-6 shadow-md">
-                <GraduationCap className="w-9 h-9" />
-              </div>
+              <img src="/brand/logo.svg" alt="AICIC Concepts" width={385} height={100} className="w-64 sm:w-72 max-w-full rounded-xl mx-auto mb-6" />
               <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
                 AICIC Concepts
               </h1>

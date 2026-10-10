@@ -41,9 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Brand & Logo Placeholder */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveView("dashboard")}>
             {/* Logo placeholder area for AICIC Concepts */}
-            <div className="w-10 h-10 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-xs">
-              <GraduationCap className="w-5 h-5 text-sky-400" />
-            </div>
+            <img src="/brand/icon.svg" alt="" width={40} height={40} className="w-10 h-10 rounded-lg shadow-xs shrink-0" />
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-bold tracking-tight text-slate-900 text-lg">AICIC CONCEPTS</span>
