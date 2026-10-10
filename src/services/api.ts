@@ -119,22 +119,24 @@ class ApiClient {
   }
 
   // Dashboard
-  async getDashboard(): Promise<AdminDashboardData | TeacherDashboardData> {
-    return this.request<AdminDashboardData | TeacherDashboardData>("/api/dashboard");
+  async getDashboard(view: string = "admin"): Promise<AdminDashboardData | TeacherDashboardData> {
+    return this.request<AdminDashboardData | TeacherDashboardData>(`/api/dashboard?view=${view}`);
   }
 
   // Courses
-  async getCourses(): Promise<Course[]> {
-    return this.request<Course[]>("/api/courses");
+  async getCourses(view: string = "admin"): Promise<Course[]> {
+    return this.request<Course[]>(`/api/courses?view=${view}`);
   }
 
-  async getCourse(id: string): Promise<{
+  async getCourse(id: string, cohort?: string): Promise<{
+    cohort: string;
+    cohorts: string[];
     course: Course;
     teachers: { id: string; name: string; email: string }[];
     students: Student[];
     sessions: AttendanceSession[];
   }> {
-    return this.request(`/api/courses/${id}`);
+    return this.request(`/api/courses/${id}${cohort === undefined ? "" : `?cohort=${encodeURIComponent(cohort)}`}`);
   }
 
   async createCourse(name: string, description?: string, cohort?: string): Promise<Course> {
@@ -208,8 +210,8 @@ class ApiClient {
   }
 
   // Attendance Sessions
-  async addRosterStudent(courseId: string, full_name: string, student_code: string, email?: string): Promise<Student> {
-    return this.request<Student>(`/api/courses/${courseId}/roster`, { method: "POST", body: JSON.stringify({ full_name, student_code, email: email || null }) });
+  async addRosterStudent(courseId: string, full_name: string, student_code: string, email?: string, cohort?: string): Promise<Student> {
+    return this.request<Student>(`/api/courses/${courseId}/roster`, { method: "POST", body: JSON.stringify({ full_name, student_code, email: email || null, cohort }) });
   }
 
   async invitationStatus(kind: "admin" | "teacher"): Promise<{ revision: string }> {
@@ -232,10 +234,10 @@ class ApiClient {
     return this.request(`/api/attendance/${token}/lookup`, { method: "POST", body: JSON.stringify({ student_code: studentCode }) });
   }
 
-  async startSession(courseId: string, durationMinutes: number = 10): Promise<AttendanceSession & { attendance_url: string }> {
+  async startSession(courseId: string, durationMinutes: number = 10, cohort?: string): Promise<AttendanceSession & { attendance_url: string }> {
     return this.request(`/api/courses/${courseId}/sessions`, {
       method: "POST",
-      body: JSON.stringify({ duration_minutes: durationMinutes })
+      body: JSON.stringify({ duration_minutes: durationMinutes, cohort })
     });
   }
 
@@ -310,6 +312,31 @@ class ApiClient {
     return data;
   }
 
+
+  async importStudents(courseId: string, file: File, cohort: string, track: string): Promise<ImportReport> {
+    const body = new FormData(); body.append("file", file); body.append("cohort", cohort); body.append("track", track);
+    const res = await fetch(`${API_ORIGIN}/api/courses/${courseId}/import`, { method: "POST", headers: { Authorization: `Bearer ${this.token}` }, body });
+    const data = await readResponse(res);
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Import failed. Check your file and selections.");
+    return data;
+  }
+  async downloadCsv(path: string, filename: string) {
+    const res = await fetch(`${API_ORIGIN}/api${path}`, { headers: { Authorization: `Bearer ${this.token}` } });
+    if (!res.ok) { const data = await res.json(); throw new Error(data.detail || "Export failed."); }
+    const url = URL.createObjectURL(await res.blob()); const link = document.createElement("a");
+    link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async removeRosterStudent(courseId: string, studentId: string, cohort: string) {
+    return this.request(`/api/courses/${courseId}/roster/${studentId}?cohort=${encodeURIComponent(cohort)}`, {method: "DELETE"});
+  }
+  async getStaff(): Promise<User[]> { return this.request("/api/staff"); }
+  async deleteTeacher(id: string) { return this.request(`/api/teachers/${id}`, {method: "DELETE"}); }
+  async getNotifications(): Promise<AdminNotice[]> { return this.request("/api/notifications"); }
+  async readNotification(id: string) { return this.request(`/api/notifications/${id}/read`, {method: "POST"}); }
+  async getPendingAttendance(): Promise<PendingEntry[]> { return this.request("/api/pending-attendance"); }
+  async verifyAttendance(id: string, approve: boolean) { return this.request(`/api/pending-attendance/${id}/verify`, {method: "POST", body: JSON.stringify({approve})}); }
+  async deskCheckIn(session_id: string, student_code: string): Promise<{message: string}> { return this.request("/api/desk/check-in", {method: "POST", body: JSON.stringify({session_id, student_code})}); }
+
   async resetDatabase(): Promise<{ message: string }> {
     return this.request<{ message: string }>("/api/admin/reset-seed", {
       method: "POST"
@@ -318,3 +345,7 @@ class ApiClient {
 }
 
 export const api = new ApiClient();
+
+export interface ImportReport { created: {name: string; email: string; student_code: string}[]; skipped: {row: number; email: string; reason: string}[]; errors: {row: number; reason: string}[]; cohort: string; prefix: string }
+export interface AdminNotice {id: string; message: string; created_at: string; read: boolean}
+export interface PendingEntry {id: string; student_name: string; student_code: string; course_name: string; cohort: string; session_id: string; submitted_at: string; source: string; can_verify: boolean}

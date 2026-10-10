@@ -14,6 +14,8 @@ import {
 
 interface NavbarProps {
   currentUser: User | null;
+  viewMode: "admin" | "teacher";
+  onSwitchView: () => void;
   onOpenLogin: () => void;
   onLogout: () => void;
   activeView: string;
@@ -23,12 +25,15 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
+  viewMode,
+  onSwitchView,
   onOpenLogin,
   onLogout,
   activeView,
   setActiveView,
   onQuickLogin,
 }) => {
+  const effectiveRole = currentUser?.role === "admin" ? viewMode : currentUser?.role;
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -67,7 +72,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Dashboard
               </button>
 
-              {currentUser.role === "admin" && (
+              {effectiveRole === "admin" && (
                 <>
                   <button
                     id="nav-admin-courses-btn"
@@ -105,7 +110,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </>
               )}
 
-              {currentUser.role === "teacher" && (
+              {effectiveRole === "teacher" && (
                 <button
                   id="nav-my-courses-btn"
                   onClick={() => setActiveView("courses")}
@@ -169,6 +174,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
       </div>
+      {currentUser && <div className="max-w-7xl mx-auto px-4 pb-2 flex flex-wrap gap-2 text-xs">
+        {currentUser.role === "admin" && <button onClick={onSwitchView} className="rounded-lg bg-sky-100 text-sky-800 px-3 py-2 font-semibold">Switch to {viewMode === "admin" ? "tutor" : "admin"} view</button>}
+        <button onClick={() => setActiveView("operations")} className="rounded-lg border border-slate-200 px-3 py-2">{currentUser.role === "admin" ? "Attendance desk, staff & notifications" : "Verify desk attendance"}</button>
+        <button className="md:hidden rounded-lg border px-3 py-2" onClick={() => setActiveView("dashboard")}>Dashboard</button>
+        <button className="md:hidden rounded-lg border px-3 py-2" onClick={() => setActiveView("courses")}>Courses</button>
+      </div>}
     </header>
   );
 };

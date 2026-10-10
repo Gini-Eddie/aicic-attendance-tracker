@@ -4,14 +4,16 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User, Course, Student, Enrollment, AttendanceSession, AttendanceRecord, TeacherCourse
 from ..auth import get_current_user
+from ..registration import roster, attendance_roster
+from ..models import DeletedUser
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 @router.get("")
-def get_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role == "admin":
+def get_dashboard(view: str = "admin", current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role == "admin" and view != "teacher":
         total_students = db.query(Student).count()
-        total_teachers = db.query(User).filter(User.role == "teacher").count()
+        total_teachers = db.query(User).filter(User.role == "teacher", User.id.notin_(db.query(DeletedUser.user_id))).count()
         total_courses = db.query(Course).count()
         total_sessions = db.query(AttendanceSession).count()
 
@@ -19,7 +21,7 @@ def get_dashboard(current_user: User = Depends(get_current_user), db: Session = 
         total_pos = 0
         total_rec = 0
         for s in sessions:
-            enr_count = db.query(Enrollment).filter(Enrollment.course_id == s.course_id).count()
+            enr_count = len(attendance_roster(db, s))
             rec_count = db.query(AttendanceRecord).filter(AttendanceRecord.session_id == s.id).count()
             total_pos += enr_count
             total_rec += rec_count
@@ -29,7 +31,7 @@ def get_dashboard(current_user: User = Depends(get_current_user), db: Session = 
         recent_sessions = db.query(AttendanceSession).order_by(AttendanceSession.starts_at.desc()).limit(6).all()
         recent_data = []
         for s in recent_sessions:
-            enr = db.query(Enrollment).filter(Enrollment.course_id == s.course_id).count()
+            enr = len(attendance_roster(db, s))
             rec = db.query(AttendanceRecord).filter(AttendanceRecord.session_id == s.id).count()
             recent_data.append({
                 "id": s.id,
@@ -66,7 +68,7 @@ def get_dashboard(current_user: User = Depends(get_current_user), db: Session = 
         pos = 0
         rec = 0
         for s in sessions:
-            enr = db.query(Enrollment).filter(Enrollment.course_id == s.course_id).count()
+            enr = len(attendance_roster(db, s))
             r = db.query(AttendanceRecord).filter(AttendanceRecord.session_id == s.id).count()
             pos += enr
             rec += r
@@ -75,7 +77,7 @@ def get_dashboard(current_user: User = Depends(get_current_user), db: Session = 
 
         cards = []
         for c in assigned_courses:
-            enrolled = db.query(Enrollment).filter(Enrollment.course_id == c.id).count()
+            enrolled = len(roster(db, c.id))
             c_sessions = db.query(AttendanceSession).filter(
                 AttendanceSession.course_id == c.id
             ).order_by(AttendanceSession.starts_at.desc()).all()

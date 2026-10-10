@@ -49,7 +49,7 @@ export const SessionHistoryDetailModal: React.FC<SessionHistoryDetailModalProps>
     const matchesFilter =
       filter === "all" ||
       (filter === "present" && s.status === "Present") ||
-      (filter === "absent" && s.status === "Absent");
+      (filter === "absent" && s.status !== "Present");
 
     const matchesSearch =
       s.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -109,7 +109,7 @@ export const SessionHistoryDetailModal: React.FC<SessionHistoryDetailModalProps>
                 <span className="text-xl font-extrabold text-emerald-600">{detail.checked_in_count}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Absent</span>
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Not recorded</span>
                 <span className="text-xl font-extrabold text-rose-600">{detail.total_enrolled - detail.checked_in_count}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
@@ -154,7 +154,7 @@ export const SessionHistoryDetailModal: React.FC<SessionHistoryDetailModalProps>
                     filter === "absent" ? "bg-rose-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
-                  Absent ({detail.total_enrolled - detail.checked_in_count})
+                  Not recorded ({detail.total_enrolled - detail.checked_in_count})
                 </button>
               </div>
             </div>
@@ -203,7 +203,7 @@ export const SessionHistoryDetailModal: React.FC<SessionHistoryDetailModalProps>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-semibold border border-rose-200">
                               <XCircle className="w-3 h-3" />
-                              Absent
+                              {s.status}
                             </span>
                           )}
                         </td>

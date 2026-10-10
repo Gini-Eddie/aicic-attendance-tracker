@@ -117,3 +117,60 @@ class CourseCohort(Base):
     __tablename__ = "course_cohorts"
     course_id = Column(String(64), ForeignKey("courses.id", ondelete="CASCADE"), primary_key=True)
     name = Column(String(255), nullable=False)
+
+
+class StudentRegistration(Base):
+    __tablename__ = "student_registrations"
+    id = Column(String(64), primary_key=True, default=generate_uuid)
+    student_id = Column(String(64), ForeignKey("students.id"), nullable=False, index=True)
+    course_id = Column(String(64), ForeignKey("courses.id"), nullable=False, index=True)
+    cohort = Column(String(255), nullable=False)
+    code = Column(String(64), nullable=False, unique=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    student = relationship("Student")
+    __table_args__ = (UniqueConstraint("student_id", "course_id", "cohort", name="uq_registration_membership"),)
+
+
+class SessionCohort(Base):
+    __tablename__ = "session_cohorts"
+    session_id = Column(String(64), ForeignKey("attendance_sessions.id"), primary_key=True)
+    cohort = Column(String(255), nullable=False)
+
+
+class PendingAttendance(Base):
+    __tablename__ = "pending_attendance"
+    id = Column(String(64), primary_key=True, default=generate_uuid)
+    session_id = Column(String(64), ForeignKey("attendance_sessions.id"), nullable=False, index=True)
+    student_id = Column(String(64), ForeignKey("students.id"), nullable=False)
+    submitted_by = Column(String(64), nullable=False)
+    submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    status = Column(String(16), nullable=False, default="pending")
+    verified_by = Column(String(64), nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("session_id", "student_id", name="uq_pending_checkin"),)
+
+
+class AdminNotification(Base):
+    __tablename__ = "admin_notifications"
+    id = Column(String(64), primary_key=True, default=generate_uuid)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class NotificationRead(Base):
+    __tablename__ = "notification_reads"
+    notification_id = Column(String(64), ForeignKey("admin_notifications.id"), primary_key=True)
+    admin_id = Column(String(64), ForeignKey("users.id"), primary_key=True)
+
+
+class DeletedUser(Base):
+    __tablename__ = "deleted_users"
+    user_id = Column(String(64), ForeignKey("users.id"), primary_key=True)
+    deleted_by = Column(String(64), nullable=False)
+    deleted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class DeletedRegistration(Base):
+    __tablename__ = "deleted_registrations"
+    registration_id = Column(String(64), ForeignKey("student_registrations.id"), primary_key=True)
+    deleted_at = Column(DateTime, default=datetime.utcnow, nullable=False)

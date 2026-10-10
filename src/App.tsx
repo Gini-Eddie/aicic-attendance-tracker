@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { api } from "./services/api";
 import { User, TeacherDashboardData, AdminDashboardData } from "./types";
+import { AttendanceOperations } from "./components/AttendanceOperations";
 import { MyCourses } from "./components/MyCourses";
 import { AccountSettings } from "./components/AccountSettings";
 import { Navbar } from "./components/Navbar";
@@ -30,6 +31,8 @@ export default function App() {
     || new URLSearchParams(window.location.search).get("token");
   // Authentication state
   const [currentUser, setCurrentUser] = useState<User | null>(api.getUser());
+  const [viewMode, setViewMode] = useState<"admin" | "teacher">("admin");
+  const effectiveRole = currentUser?.role === "admin" ? viewMode : currentUser?.role;
   const [theme, setTheme] = useState<"light" | "dark">("light");
   useEffect(() => {
     const saved = currentUser ? localStorage.getItem(`aicic_theme_${currentUser.id}`) : "light";
@@ -46,6 +49,14 @@ export default function App() {
   // Active navigation view
   // "dashboard" | "courses" | "teachers" | "students" | "course-detail" | "active-session" | "student-checkin"
   const [activeView, setActiveView] = useState<string>(attendanceTokenFromUrl ? "student-checkin" : "dashboard");
+  const [noticeCount, setNoticeCount] = useState(0);
+  useEffect(() => {
+    if (currentUser?.role !== "admin" || attendanceTokenFromUrl) {setNoticeCount(0); return;}
+    let cancelled = false;
+    const load = () => api.getNotifications().then(items => {if (!cancelled) setNoticeCount(items.filter(n => !n.read).length);}).catch(() => {});
+    load(); const timer = setInterval(load, 60000);
+    return () => {cancelled = true; clearInterval(timer);};
+  }, [currentUser?.id, activeView]);
 
   // Selected entities for drill-down views
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
@@ -59,6 +70,7 @@ export default function App() {
   // Dashboard data
   const [dashboardData, setDashboardData] = useState<AdminDashboardData | TeacherDashboardData | null>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const dashboardRequest = useRef(0);
 
   // Detect URL path or query for public student attendance (/attendance/:token)
   useEffect(() => {
@@ -97,22 +109,26 @@ export default function App() {
   // Fetch dashboard data whenever currentUser changes or view becomes "dashboard"
   const fetchDashboard = async () => {
     if (!currentUser) return;
+    const requestId = ++dashboardRequest.current;
     setLoadingDashboard(true);
     try {
-      const data = await api.getDashboard();
-      setDashboardData(data);
+      const data = await api.getDashboard(effectiveRole);
+      if (requestId === dashboardRequest.current) setDashboardData(data);
     } catch (e) {
       console.error("Failed to load dashboard:", e);
     } finally {
-      setLoadingDashboard(false);
+      if (requestId === dashboardRequest.current) setLoadingDashboard(false);
     }
   };
 
   useEffect(() => {
-    if (currentUser && activeView === "dashboard") {
+    if (currentUser && activeView === "dashboard" && effectiveRole === "teacher") {
       fetchDashboard();
+    } else {
+      dashboardRequest.current += 1;
+      setDashboardData(null);
     }
-  }, [currentUser, activeView]);
+  }, [currentUser, activeView, viewMode]);
 
   const handleSignUp = async (name: string, email: string, pass: string, courseName: string, invitationCode: string, role: "admin" | "teacher") => {
     setLoginError(null);
@@ -198,6 +214,8 @@ export default function App() {
       {/* Top Navigation */}
       <Navbar
         currentUser={currentUser}
+        viewMode={viewMode}
+        onSwitchView={() => {setViewMode(viewMode === "admin" ? "teacher" : "admin"); setActiveView("dashboard"); setDashboardData(null);}}
         onOpenLogin={() => setIsLoginOpen(true)}
         onLogout={handleLogout}
         activeView={activeView}
@@ -209,6 +227,7 @@ export default function App() {
         onQuickLogin={handleQuickLogin}
       />
 
+      {currentUser?.role === "admin" && noticeCount > 0 && <button className="text-sm text-sky-800 bg-sky-50 px-4 py-2 text-center" onClick={() => setActiveView("operations")}>{noticeCount} unread admin notification{noticeCount === 1 ? "" : "s"} · View activity</button>}
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!currentUser ? (
@@ -247,8 +266,9 @@ export default function App() {
         ) : (
           /* Logged In Application Screens */
           <div>
+            {activeView === "operations" && <AttendanceOperations user={currentUser} />}
             {activeView === "settings" && <AccountSettings user={currentUser} theme={theme} onThemeChange={changeTheme} onSaved={setCurrentUser} />}
-            {activeView === "courses" && currentUser.role === "teacher" && <MyCourses onSelectCourse={handleOpenCourse} />}
+            {activeView === "courses" && effectiveRole === "teacher" && <MyCourses onSelectCourse={handleOpenCourse} />}
             {/* View 1: Active Attendance Session (QR Screen) */}
             {activeView === "active-session" && activeSessionId && (
               <ActiveAttendanceScreen
@@ -280,7 +300,7 @@ export default function App() {
             {/* View 3: Primary Dashboard */}
             {activeView === "dashboard" && (
               <>
-                {currentUser.role === "admin" && (
+                {effectiveRole === "admin" && (
                   <AdminDashboard
                     onInspectSession={(sessId) => setInspectSessionId(sessId)}
                     onViewStudentProfile={(stuId) => setInspectStudentId(stuId)}
@@ -288,8 +308,8 @@ export default function App() {
                   />
                 )}
 
-                {currentUser.role === "teacher" && !dashboardData && <p role="status">{loadingDashboard ? "Loading your dashboard..." : "Unable to load your dashboard."} <button className="underline" onClick={fetchDashboard}>Retry</button></p>}
-                {currentUser.role === "teacher" && dashboardData && (
+                {effectiveRole === "teacher" && !dashboardData && <p role="status">{loadingDashboard ? "Loading your dashboard..." : "Unable to load your dashboard."} <button className="underline" onClick={fetchDashboard}>Retry</button></p>}
+                {effectiveRole === "teacher" && dashboardData && (
                   <TeacherDashboard
                     data={dashboardData as TeacherDashboardData}
                     onSelectCourse={handleOpenCourse}
@@ -300,7 +320,7 @@ export default function App() {
             )}
 
             {/* Views 4+: Admin Direct Views (Courses, Teachers, Students) */}
-            {currentUser.role === "admin" && (activeView === "courses" || activeView === "teachers" || activeView === "students") && (
+            {effectiveRole === "admin" && (activeView === "courses" || activeView === "teachers" || activeView === "students") && (
               <AdminDashboard
                 initialTab={activeView as "courses" | "teachers" | "students"}
                 onInspectSession={(sessId) => setInspectSessionId(sessId)}

@@ -3,6 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import AttendanceSession, AttendanceRecord, Student, Enrollment, Course, User
+from ..registration import resolve_student
+from ..models import PendingAttendance
+from sqlalchemy.exc import IntegrityError
 from ..schemas import CheckInRequest, CheckInResponse, PublicSessionInfoResponse
 
 router = APIRouter(prefix="/attendance", tags=["Public Attendance Check-in"])
@@ -15,12 +18,8 @@ def lookup_student(token: str, req: CheckInRequest, db: Session = Depends(get_db
         raise HTTPException(404, "Attendance link does not exist. Ask your teacher for the current link.")
     if session.status != "active" or session.expires_at < datetime.utcnow():
         raise HTTPException(400, "Attendance is closed or expired.")
-    student = db.query(Student).filter(Student.student_code == req.student_code.strip().upper()).first()
-    if not student:
-        raise HTTPException(404, "Registration number does not exist. Check it and try again.")
-    if not db.query(Enrollment).filter(Enrollment.student_id == student.id, Enrollment.course_id == session.course_id).first():
-        raise HTTPException(403, "This registration number is not enrolled in this course. Contact your teacher.")
-    return {"student_name": student.full_name, "student_code": student.student_code}
+    student, code = resolve_student(db, session, req.student_code)
+    return {"student_name": student.full_name, "student_code": code}
 
 @router.get("/{token}", response_model=PublicSessionInfoResponse)
 def get_public_session(token: str, db: Session = Depends(get_db)):
@@ -60,7 +59,7 @@ def get_public_session(token: str, db: Session = Depends(get_db)):
 @router.post("/{token}/check-in", response_model=CheckInResponse, status_code=201)
 def check_in(token: str, req: CheckInRequest, db: Session = Depends(get_db)):
     # 1. Verify token exists
-    session = db.query(AttendanceSession).filter(AttendanceSession.token == token).first()
+    session = db.query(AttendanceSession).filter(AttendanceSession.token == token).with_for_update().first()
     if not session:
         raise HTTPException(status_code=404, detail="Invalid attendance token.")
 
@@ -81,27 +80,9 @@ def check_in(token: str, req: CheckInRequest, db: Session = Depends(get_db)):
             detail="Attendance Closed. This attendance session has expired."
         )
 
-    # 4. Verify student exists
-    code_cleaned = req.student_code.strip().upper()
-    student = db.query(Student).filter(Student.student_code == code_cleaned).first()
-
-    if not student:
-        raise HTTPException(
-            status_code=404,
-            detail="Registration number does not exist. Check it and try again."
-        )
-
-    # 5. Verify student is enrolled in that course
-    enrollment = db.query(Enrollment).filter(
-        Enrollment.course_id == session.course_id,
-        Enrollment.student_id == student.id
-    ).first()
-
-    if not enrollment:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Student {student.full_name} ({student.student_code}) is not enrolled in this course."
-        )
+    student, code_cleaned = resolve_student(db, session, req.student_code)
+    if db.query(PendingAttendance).filter_by(session_id=session.id, student_id=student.id).first():
+        raise HTTPException(409, "A company laptop submission already exists. Your course tutor must review it.")
 
     # 6. Verify student has not already checked into this session
     existing_record = db.query(AttendanceRecord).filter(
@@ -122,7 +103,11 @@ def check_in(token: str, req: CheckInRequest, db: Session = Depends(get_db)):
         checked_in_at=now
     )
     db.add(record)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Attendance has already been recorded.")
     db.refresh(record)
 
     course = db.query(Course).filter(Course.id == session.course_id).first()
@@ -130,7 +115,7 @@ def check_in(token: str, req: CheckInRequest, db: Session = Depends(get_db)):
     return {
         "message": "Attendance Recorded",
         "student_name": student.full_name,
-        "student_code": student.student_code,
+        "student_code": code_cleaned,
         "course_name": course.name if course else "Course",
         "checked_in_at": record.checked_in_at
     }

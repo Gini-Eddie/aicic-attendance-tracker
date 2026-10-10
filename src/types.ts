@@ -28,6 +28,9 @@ export interface Course {
 }
 
 export interface Student {
+  cohort?: string;
+  registration_id?: string;
+  registrations?: {course_id: string; cohort: string; student_code: string}[];
   id: string;
   full_name: string;
   email: string;
@@ -41,6 +44,7 @@ export interface Student {
 }
 
 export interface AttendanceSession {
+  cohort?: string;
   id: string;
   course_id: string;
   teacher_id: string;
@@ -71,7 +75,7 @@ export interface StudentSessionBreakdown {
   full_name: string;
   student_code: string;
   email: string;
-  status: "Present" | "Absent";
+  status: "Present" | "Absent" | "Unverified" | "Rejected";
   checked_in_at: string | null;
 }
 

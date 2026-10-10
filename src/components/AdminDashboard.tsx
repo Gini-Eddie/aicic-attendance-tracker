@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { ActionConfirmation } from "./ActionConfirmation";
 import { api } from "../services/api";
 import { AdminDashboardData, Course, Student, User } from "../types";
 import { GroupedStudents } from "./GroupedStudents";
@@ -44,6 +45,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Lists state
   const [courses, setCourses] = useState<Course[]>([]);
+  const [deletingTeacher, setDeletingTeacher] = useState<User | null>(null);
+  const [staffError, setStaffError] = useState("");
   const [teachers, setTeachers] = useState<User[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
 
@@ -70,7 +73,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const [dash, cList, tList, sList] = await Promise.all([
         api.getDashboard() as Promise<AdminDashboardData>,
         api.getCourses(),
-        api.getTeachers(),
+        api.getStaff(),
         api.getStudents()
       ]);
       setDashboardData(dash);
@@ -300,7 +303,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               : "border-transparent text-slate-500 hover:text-slate-800"
           }`}
         >
-          Teachers ({teachers.length})
+          Staff ({teachers.length})
         </button>
         <button
           onClick={() => setActiveTab("students")}
@@ -463,13 +466,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {staffError && <p role="alert" className="text-rose-700">{staffError}</p>}
+      {deletingTeacher && <ActionConfirmation message={`Delete access for ${deletingTeacher.name}? Course assignments are removed and their active sessions close. History is retained.`} onCancel={() => setDeletingTeacher(null)} onConfirm={async () => {await api.deleteTeacher(deletingTeacher.id); setDeletingTeacher(null); await loadData();}} />}
       {/* TAB 3: Teachers Management */}
       {activeTab === "teachers" && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h3 className="font-bold text-sm text-slate-900">Instructors & Teachers</h3>
-              <p className="text-xs text-slate-500">Teachers authorized to launch attendance sessions</p>
+              <h3 className="font-bold text-sm text-slate-900">Teachers & Administrators</h3>
+              <button className="text-xs text-sky-700 underline mt-2" onClick={async () => {try {await api.downloadCsv("/staff/export.csv", "staff.csv");} catch(err: any) {setStaffError(err.message);}}}>Export staff CSV</button>
+              <p className="text-xs text-slate-500">All active staff. Administrators may also teach assigned courses.</p>
             </div>
             <button
               id="admin-add-teacher-btn"
@@ -508,6 +514,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className="px-2 py-0.5 rounded text-[11px] font-semibold uppercase bg-teal-100 text-teal-800">
                         {t.role}
                       </span>
+                      {t.role === "teacher" && <button className="block text-rose-700 text-xs mx-auto mt-2" onClick={() => setDeletingTeacher(t)}>Delete teacher</button>}
                     </td>
                   </tr>
                 ))}

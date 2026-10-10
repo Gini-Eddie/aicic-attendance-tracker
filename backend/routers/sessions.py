@@ -7,6 +7,8 @@ from ..models import User, Course, TeacherCourse, Enrollment, AttendanceSession,
 from ..schemas import SessionCreate, SessionResponse
 from ..auth import get_current_user, require_teacher
 from ..permissions import require_course_access
+from ..registration import roster, attendance_roster, current_cohort, cohort_key, session_cohort
+from ..models import SessionCohort, PendingAttendance, StudentRegistration
 
 router = APIRouter(prefix="/sessions", tags=["Attendance Sessions"])
 
@@ -17,6 +19,8 @@ def delete_session(session_id: str, current_user: User = Depends(require_teacher
     if not session:
         raise HTTPException(404, "Session not found")
     require_course_access(db, current_user, session.course_id)
+    db.query(PendingAttendance).filter_by(session_id=session_id).delete()
+    db.query(SessionCohort).filter_by(session_id=session_id).delete()
     db.delete(session)
     db.commit()
     return {"message": "Session and its attendance records deleted"}
@@ -31,6 +35,9 @@ def delete_attendance(session_id: str, student_id: str, current_user: User = Dep
     record = db.query(AttendanceRecord).filter(AttendanceRecord.session_id == session_id, AttendanceRecord.student_id == student_id).first()
     if not record:
         raise HTTPException(404, "Attendance record not found")
+    desk_submission = db.query(PendingAttendance).filter_by(session_id=session_id, student_id=student_id).first()
+    if desk_submission:
+        desk_submission.status = "removed"
     db.delete(record)
     db.commit()
     return {"message": "Attendance record deleted"}
@@ -49,11 +56,12 @@ def start_session(course_id: str, data: SessionCreate, current_user: User = Depe
         if not is_assigned:
             raise HTTPException(status_code=403, detail="Cannot start attendance for unassigned course")
 
-    # Close previous active sessions for this course
-    db.query(AttendanceSession).filter(
-        AttendanceSession.course_id == course_id,
-        AttendanceSession.status == "active"
-    ).update({"status": "closed"})
+    selected = current_cohort(db, course_id) if data.cohort is None else cohort_key(data.cohort)
+    if not selected and any(r[0] for r in db.query(StudentRegistration.cohort).filter_by(course_id=course_id)):
+        raise HTTPException(400, "Choose a cohort before starting attendance.")
+    for previous in db.query(AttendanceSession).filter_by(course_id=course_id, status="active").all():
+        if session_cohort(db, previous) == selected:
+            previous.status = "closed"
 
     token = secrets.token_hex(16)
     duration = data.duration_minutes if data.duration_minutes and data.duration_minutes > 0 else 10
@@ -69,6 +77,8 @@ def start_session(course_id: str, data: SessionCreate, current_user: User = Depe
         status="active"
     )
     db.add(session)
+    db.flush()
+    db.add(SessionCohort(session_id=session.id, cohort=selected))
     db.commit()
     db.refresh(session)
 
@@ -82,7 +92,8 @@ def start_session(course_id: str, data: SessionCreate, current_user: User = Depe
         "status": session.status,
         "created_at": session.created_at,
         "attendance_url": f"/attendance/{token}",
-        "course_name": course.name
+        "course_name": course.name,
+        "cohort": selected
     }
     return session_dict
 
@@ -105,6 +116,7 @@ def get_session(session_id: str, current_user: User = Depends(get_current_user),
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    require_course_access(db, current_user, session.course_id)
     now = datetime.utcnow()
     if session.status == "active" and session.expires_at < now:
         session.status = "expired"
@@ -113,20 +125,22 @@ def get_session(session_id: str, current_user: User = Depends(get_current_user),
     course = db.query(Course).filter(Course.id == session.course_id).first()
     teacher = db.query(User).filter(User.id == session.teacher_id).first()
 
-    enrolled = db.query(Enrollment).filter(Enrollment.course_id == session.course_id).all()
+    enrolled = attendance_roster(db, session)
     records = db.query(AttendanceRecord).filter(AttendanceRecord.session_id == session_id).all()
 
     record_map = {r.student_id: r for r in records}
+    pending_map = {r.student_id: r for r in db.query(PendingAttendance).filter_by(session_id=session_id).all()}
 
     breakdown = []
     for e in enrolled:
-        rec = record_map.get(e.student_id)
+        student = e["student"]
+        rec = record_map.get(student.id)
         breakdown.append({
-            "student_id": e.student.id,
-            "full_name": e.student.full_name,
-            "student_code": e.student.student_code,
-            "email": "" if e.student.email.endswith("@students.invalid") else e.student.email,
-            "status": "Present" if rec else "Absent",
+            "student_id": student.id,
+            "full_name": student.full_name,
+            "student_code": e["code"],
+            "email": "" if student.email.endswith("@students.invalid") else student.email,
+            "status": "Present" if rec else ("Unverified" if student.id in pending_map and pending_map[student.id].status == "pending" else "Rejected" if student.id in pending_map and pending_map[student.id].status == "rejected" else "Absent"),
             "checked_in_at": rec.checked_in_at if rec else None
         })
 
@@ -148,12 +162,14 @@ def live_attendance(session_id: str, current_user: User = Depends(get_current_us
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    require_course_access(db, current_user, session.course_id)
     now = datetime.utcnow()
     if session.status == "active" and session.expires_at < now:
         session.status = "expired"
         db.commit()
 
-    enrolled_count = db.query(Enrollment).filter(Enrollment.course_id == session.course_id).count()
+    enrolled_count = len(attendance_roster(db, session))
+    codes = {r["student"].id: r["code"] for r in attendance_roster(db, session)}
     records = db.query(AttendanceRecord).filter(
         AttendanceRecord.session_id == session_id
     ).order_by(AttendanceRecord.checked_in_at.desc()).all()
@@ -165,7 +181,7 @@ def live_attendance(session_id: str, current_user: User = Depends(get_current_us
             "id": r.id,
             "student_id": r.student_id,
             "student_name": student.full_name if student else "Unknown",
-            "student_code": student.student_code if student else "N/A",
+            "student_code": codes.get(r.student_id, student.student_code) if student else "N/A",
             "checked_in_at": r.checked_in_at
         })
 

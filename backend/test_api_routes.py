@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 import unittest
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 os.environ["DATABASE_URL"] = "sqlite://"
@@ -19,6 +20,8 @@ from .auth import create_access_token, get_password_hash
 class RouteTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        with self.engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
         Base.metadata.create_all(self.engine)
         self.factory = sessionmaker(bind=self.engine)
         def database():
@@ -41,22 +44,25 @@ class RouteTests(unittest.TestCase):
         app.dependency_overrides.clear()
         self.engine.dispose()
 
-    def request(self, method, path, body=None, user="admin"):
+    def request(self, method, path, body=None, user="admin", raw_body=None, content_type="application/json"):
+        parsed = urlsplit(path)
         async def run():
             messages = []
             async def receive():
-                return {"type": "http.request", "body": json.dumps(body or {}).encode(), "more_body": False}
+                return {"type": "http.request", "body": raw_body if raw_body is not None else json.dumps(body or {}).encode(), "more_body": False}
             async def send(message):
                 messages.append(message)
-            headers = [(b"content-type", b"application/json")]
+            headers = [(b"content-type", content_type.encode())]
             if user:
                 headers.append((b"authorization", f"Bearer {create_access_token({'id': user})}".encode()))
             await app({"type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"}, "http_version": "1.1", "method": method,
-                       "scheme": "http", "path": path, "raw_path": path.encode(), "query_string": b"",
+                       "scheme": "http", "path": parsed.path, "raw_path": parsed.path.encode(), "query_string": parsed.query.encode(),
                        "root_path": "", "headers": headers, "server": ("test", 80), "client": ("test", 123)}, receive, send)
             status = next(m["status"] for m in messages if m["type"] == "http.response.start")
             data = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body")
-            return status, json.loads(data)
+            start = next(m for m in messages if m["type"] == "http.response.start")
+            is_csv = any(k == b"content-type" and b"text/csv" in v for k, v in start["headers"])
+            return status, data.decode("utf-8-sig") if is_csv else json.loads(data)
         return asyncio.run(run())
 
     def test_attendance_workflow(self):
@@ -237,6 +243,131 @@ class RouteTests(unittest.TestCase):
                 self.assertEqual(self.request("POST", path, {"password": "wrong"})[0], 403)
             self.assertEqual(self.request("POST", path, {"password": "Password123!"})[0], 429)
         failures.clear()
+
+
+    def upload(self, content=b"name,email\nFirst Student,first@example.com\n", cohort="MATRIX", track="UI", course="course", user="teacher", filename="students.csv"):
+        boundary = "test-import-boundary"
+        data = (f'--{boundary}\r\nContent-Disposition: form-data; name="cohort"\r\n\r\n{cohort}\r\n'
+                f'--{boundary}\r\nContent-Disposition: form-data; name="track"\r\n\r\n{track}\r\n'
+                f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n').encode() + content + f'\r\n--{boundary}--\r\n'.encode()
+        return self.request("POST", f"/api/courses/{course}/import", user=user, raw_body=data, content_type=f"multipart/form-data; boundary={boundary}")
+
+    def test_import_memberships_numbers_and_excel(self):
+        from io import BytesIO
+        from openpyxl import Workbook
+        status, report = self.upload(b"name,email\nFirst Student,first@example.com\nDuplicate,first@example.com\nInvalid,wrong\nSecond Student,second@example.com\n")
+        self.assertEqual(status, 200, report)
+        self.assertEqual([r["student_code"] for r in report["created"]], ["MATRIX-UI-001", "MATRIX-UI-002"])
+        self.assertEqual(len(report["skipped"]), 1)
+        self.assertEqual(len(report["errors"]), 1)
+        self.assertEqual(self.upload()[1]["created"], [])
+        self.assertEqual(self.upload(b"name,email\nThird Student,third@example.com\n")[1]["created"][0]["student_code"], "MATRIX-UI-003")
+        self.assertEqual(self.upload(cohort="NEXT")[1]["created"][0]["student_code"], "NEXT-UI-001")
+        self.assertEqual(self.upload(course="other", user="admin", track="AI")[1]["created"][0]["student_code"], "MATRIX-AI-001")
+        workbook = Workbook(); workbook.active.append(["Full Name", "Email Address"]); workbook.active.append(["Excel Student", "excel@example.com"])
+        output = BytesIO(); workbook.save(output); workbook.close()
+        self.assertEqual(self.upload(output.getvalue(), filename="students.xlsx")[1]["created"][0]["student_code"], "MATRIX-UI-004")
+        roster = self.request("GET", "/api/courses/course?cohort=NEXT", user="teacher")[1]
+        self.assertEqual(len(roster["students"]), 1)
+        self.assertEqual(roster["students"][0]["student_code"], "NEXT-UI-001")
+        self.assertEqual(len(roster["cohorts"]), 2)
+        self.assertEqual(self.upload(course="other")[0], 403)
+        self.assertEqual(self.upload(b"wrong,columns\nA,B\n")[0], 400)
+        status, session = self.request("POST", "/api/courses/course/sessions", {"cohort": "NEXT"}, user="teacher")
+        self.assertEqual(status, 201, session)
+        path = f'/api/attendance/{session["token"]}/check-in'
+        self.assertEqual(self.request("POST", path, {"student_code": "MATRIX-UI-001"}, user=None)[0], 403)
+        self.assertEqual(self.request("POST", path, {"student_code": "NEXT-UI-001"}, user=None)[0], 201)
+        with self.factory() as db:
+            self.assertEqual(db.query(Student).filter_by(email="first@example.com").count(), 1)
+
+    def test_desk_pending_verification_and_exports(self):
+        self.upload()
+        session = self.request("POST", "/api/courses/course/sessions", {"cohort": "MATRIX"}, user="teacher")[1]
+        sid = session["id"]; body = {"session_id": sid, "student_code": "MATRIX-UI-001"}
+        self.assertEqual(self.request("POST", "/api/desk/check-in", body, user="teacher")[0], 403)
+        self.assertEqual(self.request("POST", "/api/desk/check-in", body)[0], 201)
+        self.assertEqual(self.request("POST", "/api/desk/check-in", body)[0], 409)
+        self.assertEqual(self.request("GET", f"/api/sessions/{sid}/attendance")[1]["checked_in_count"], 0)
+        self.assertEqual(self.request("GET", f"/api/sessions/{sid}")[1]["student_breakdown"][0]["status"], "Unverified")
+        self.assertEqual(self.request("POST", f'/api/attendance/{session["token"]}/check-in', {"student_code": "MATRIX-UI-001"}, user=None)[0], 409)
+        pending = self.request("GET", "/api/pending-attendance", user="teacher")[1][0]
+        path = f'/api/pending-attendance/{pending["id"]}/verify'
+        self.assertEqual(self.request("POST", path, {"approve": True})[0], 403)
+        self.assertIn("pending", self.request("GET", f"/api/sessions/{sid}/export.csv")[1])
+        self.assertEqual(self.request("POST", f"/api/sessions/{sid}/close")[0], 200)
+        self.assertEqual(self.request("POST", path, {"approve": True}, user="teacher")[0], 200)
+        self.assertEqual(self.request("POST", path, {"approve": True}, user="teacher")[0], 409)
+        self.assertEqual(self.request("GET", f"/api/sessions/{sid}/attendance")[1]["checked_in_count"], 1)
+        self.assertIn("Admin/company laptop", self.request("GET", f"/api/sessions/{sid}/export.csv")[1])
+        student = self.request("GET", "/api/courses/course?cohort=MATRIX")[1]["students"][0]
+        self.assertEqual(self.request("DELETE", f'/api/courses/course/roster/{student["id"]}?cohort=MATRIX', user="teacher")[0], 200)
+        self.assertIn("First Student", self.request("GET", f"/api/sessions/{sid}/export.csv")[1])
+        notices = self.request("GET", "/api/notifications")[1]
+        self.assertIn("Teacher removed First Student", notices[0]["message"])
+        self.assertEqual(self.request("POST", f'/api/notifications/{notices[0]["id"]}/read')[0], 200)
+        self.assertTrue(self.request("GET", "/api/notifications")[1][0]["read"])
+        self.assertEqual(self.request("GET", "/api/notifications", user="teacher")[0], 403)
+        self.assertEqual(len(self.upload()[1]["skipped"]), 1)
+        self.assertEqual(self.request("DELETE", f"/api/sessions/{sid}")[0], 200)
+
+    def test_admin_tutor_and_teacher_deletion(self):
+        self.assertEqual(self.request("GET", "/api/dashboard?view=teacher")[1]["role"], "teacher")
+        self.assertEqual(self.request("GET", "/api/courses?view=teacher")[1], [])
+        course = self.request("POST", "/api/courses", {"name": "Admin course", "cohort": "MATRIX"})[1]
+        self.assertEqual(self.request("GET", "/api/courses?view=teacher")[1][0]["id"], course["id"])
+        self.assertEqual(self.request("GET", "/api/auth/me")[1]["role"], "admin")
+        self.assertTrue(any(t["id"] == "admin" for t in self.request("GET", "/api/teachers")[1]))
+        self.assertTrue(any(t["role"] == "admin" for t in self.request("GET", "/api/staff")[1]))
+        self.assertEqual(self.request("POST", "/api/courses", {"name": "Tutor course"}, user="teacher")[0], 201)
+        session = self.request("POST", "/api/courses/course/sessions", user="teacher")[1]
+        self.assertEqual(self.request("GET", f'/api/sessions/{session["id"]}', user="teacher")[0], 200)
+        self.assertEqual(self.request("DELETE", "/api/teachers/admin")[0], 403)
+        self.assertEqual(self.request("DELETE", "/api/teachers/teacher", user="teacher")[0], 403)
+        self.assertEqual(self.request("DELETE", "/api/teachers/teacher")[0], 200)
+        self.assertEqual(self.request("GET", "/api/auth/me", user="teacher")[0], 401)
+        self.assertEqual(self.request("POST", "/api/auth/login", {"email": "teacher@example.com", "password": "anything"}, user=None)[0], 401)
+        self.assertFalse(any(t["id"] == "teacher" for t in self.request("GET", "/api/staff")[1]))
+        self.assertEqual(self.request("GET", f'/api/sessions/{session["id"]}')[1]["session"]["status"], "closed")
+        self.assertIn("Admin,admin@example.com,admin", self.request("GET", "/api/staff/export.csv")[1])
+
+    def test_pending_rejection_and_cohort_removal(self):
+        self.upload(); self.upload(cohort="NEXT")
+        session = self.request("POST", "/api/courses/course/sessions", {"cohort": "MATRIX"}, user="teacher")[1]
+        self.request("POST", "/api/desk/check-in", {"session_id": session["id"], "student_code": "MATRIX-UI-001"})
+        entry = self.request("GET", "/api/pending-attendance")[1][0]
+        student = self.request("GET", "/api/courses/course?cohort=MATRIX")[1]["students"][0]
+        self.request("DELETE", f'/api/courses/course/roster/{student["id"]}?cohort=MATRIX', user="teacher")
+        self.assertEqual(len(self.request("GET", "/api/courses/course?cohort=NEXT")[1]["students"]), 1)
+        self.assertEqual(self.request("POST", f'/api/pending-attendance/{entry["id"]}/verify', {"approve": True}, user="teacher")[0], 409)
+        self.assertEqual(self.request("POST", f'/api/pending-attendance/{entry["id"]}/verify', {"approve": False}, user="teacher")[0], 200)
+        self.assertEqual(self.request("GET", f'/api/sessions/{session["id"]}/attendance')[1]["checked_in_count"], 0)
+        self.assertIn("rejected", self.request("GET", f'/api/sessions/{session["id"]}/export.csv')[1])
+
+    def test_export_safety_limits_and_course_privacy(self):
+        status, report = self.upload(b'name,email\n"=SUM(1,2)",formula@example.com\n')
+        self.assertEqual(status, 200, report)
+        exported = self.request("GET", "/api/courses/course/registrations.csv?cohort=MATRIX", user="teacher")[1]
+        self.assertIn("'=SUM(1,2)", exported)
+        self.assertEqual(self.upload(b"name,email\n" + b"Student,student@example.com\n" * 1001)[0], 400)
+        self.assertEqual(self.upload(b"x" * (2 * 1024 * 1024 + 1))[0], 413)
+        self.assertEqual(self.request("GET", "/api/courses/other/registrations.csv", user="teacher")[0], 403)
+        self.assertIn(self.request("GET", "/api/staff/export.csv", user=None)[0], (401, 403))
+        session = self.request("POST", "/api/courses/other/sessions")[1]
+        for suffix in ("", "/attendance", "/export.csv"):
+            self.assertEqual(self.request("GET", f'/api/sessions/{session["id"]}{suffix}', user="teacher")[0], 403)
+
+    def test_legacy_enrollment_cohort_isolation(self):
+        self.request("PATCH", "/api/courses/course/cohort", {"cohort": "MATRIX"})
+        self.request("POST", "/api/courses/course/students", {"student_id": "student"})
+        self.upload(cohort="NEXT")
+        roster = self.request("GET", "/api/courses/course?cohort=NEXT")[1]["students"]
+        self.assertFalse(any(s["id"] == "student" for s in roster))
+        session = self.request("POST", "/api/courses/course/sessions", {"cohort": "NEXT"}, user="teacher")[1]
+        self.assertEqual(self.request("POST", f'/api/attendance/{session["token"]}/check-in', {"student_code": "TEST-001"}, user=None)[0], 403)
+        report = self.upload(b"name,email\nTest Student,student@example.com\n", cohort="MATRIX")[1]
+        self.assertEqual(len(report["skipped"]), 1)
+        self.assertEqual(report["created"], [])
 
 
 if __name__ == "__main__":

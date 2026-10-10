@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import engine, Base
-from .routers import auth, courses, students, sessions, attendance, dashboard, teachers, admin_security
+from .routers import auth, courses, students, sessions, attendance, dashboard, teachers, admin_security, operations
 
 # Create database tables if they don't exist
 Base.metadata.create_all(bind=engine)
@@ -31,6 +31,7 @@ app.include_router(attendance.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(teachers.router, prefix="/api")
 app.include_router(admin_security.router, prefix="/api")
+app.include_router(operations.router, prefix="/api")
 
 @app.get("/api/health")
 def health_check():

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_password_hash, require_admin
 from ..database import get_db
-from ..models import User
+from ..models import User, DeletedUser, TeacherCourse
 from ..schemas import UserCreate, UserResponse
 
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/teachers", tags=["Teachers"])
 
 @router.get("")
 def list_teachers(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
-    teachers = db.query(User).filter(User.role == "teacher").all()
+    teachers = db.query(User).filter(User.id.notin_(db.query(DeletedUser.user_id)), (User.role == "teacher") | User.id.in_(db.query(TeacherCourse.teacher_id))).all()
     return [{"id": teacher.id, "name": teacher.name, "email": teacher.email, "role": teacher.role,
              "created_at": teacher.created_at,
              "courses": [{"id": course.id, "name": course.name} for course in teacher.courses_taught]}

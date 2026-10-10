@@ -2,7 +2,19 @@ import React from "react";
 import { Course, Student } from "../types";
 
 export function GroupedStudents({ students, courses, onViewStudentProfile }: { students: Student[]; courses: Course[]; onViewStudentProfile: (id: string) => void }) {
-  const groups = courses.map(course => ({ id: course.id, name: course.name, cohort: course.cohort, teachers: (course.teachers || []).map(t => t.name).join(", ") || "No teacher assigned", students: students.filter(student => student.courses?.some(c => c.id === course.id)) }));
+  const groups = courses.flatMap(course => {
+    const members = students.filter(student => student.courses?.some(c => c.id === course.id));
+    const cohorts = new Set(members.flatMap(student => student.registrations?.filter(r => r.course_id === course.id).map(r => r.cohort || "") || []));
+    const currentCohort = (course.cohort || "").trim().toUpperCase();
+    if (!cohorts.size || members.some(student => !student.registrations?.some(r => r.course_id === course.id))) cohorts.add(currentCohort);
+    return [...cohorts].map(cohort => ({id: `${course.id}-${cohort}`, name: course.name, cohort, teachers: (course.teachers || []).map(t => t.name).join(", ") || "No teacher assigned",
+      students: members.flatMap(student => {
+        const registrations = student.registrations?.filter(r => r.course_id === course.id) || [];
+        if (!registrations.length) return cohort === currentCohort ? [{...student}] : [];
+        const match = registrations.find(r => r.cohort === cohort);
+        return match ? [{...student, student_code: match.student_code}] : [];
+      })}));
+  });
   const unassigned = students.filter(student => !student.courses?.length);
   if (unassigned.length) groups.push({ id: "unassigned", name: "Not enrolled in a course", cohort: null, teachers: "No teacher assigned", students: unassigned });
   if (!students.length) return <p className="p-6 text-sm text-slate-500">No students have been registered yet.</p>;

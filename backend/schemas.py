@@ -72,9 +72,11 @@ class TeacherAssignmentCreate(BaseModel):
 
 # Attendance Session Schemas
 class SessionCreate(BaseModel):
-    duration_minutes: Optional[int] = 10
+    cohort: Optional[str] = Field(default=None, max_length=255)
+    duration_minutes: Optional[int] = Field(default=10, ge=1, le=1440)
 
 class SessionResponse(BaseModel):
+    cohort: Optional[str] = None
     id: str
     course_id: str
     teacher_id: str

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { CohortImport } from "./CohortImport";
+import { ActionConfirmation } from "./ActionConfirmation";
 import { api } from "../services/api";
 import { Course, Student, AttendanceSession } from "../types";
 import { 
@@ -32,12 +34,17 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
   onViewStudentProfile
 }) => {
   const [data, setData] = useState<{
+    cohort: string;
+    cohorts: string[];
     course: Course;
     teachers: { id: string; name: string; email: string }[];
     students: Student[];
     sessions: AttendanceSession[];
   } | null>(null);
 
+  const [selectedCohort, setSelectedCohort] = useState<string | undefined>();
+  const [removing, setRemoving] = useState<Student | null>(null);
+  const [deletingSession, setDeletingSession] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"history" | "students">("history");
   const [studentSearch, setStudentSearch] = useState("");
@@ -49,11 +56,11 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
   const [durationMinutes, setDurationMinutes] = useState(10);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchCourseData = async () => {
+  const fetchCourseData = async (cohort = selectedCohort, background = false) => {
     try {
-      setLoading(true);
+      if (!background) setLoading(true);
       setError(null);
-      const result = await api.getCourse(courseId);
+      const result = await api.getCourse(courseId, cohort);
       setData(result);
     } catch (err: any) {
       setError(err.message || "Failed to load course details.");
@@ -69,7 +76,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
   const handleStartAttendance = async () => {
     setStartingSession(true);
     try {
-      const newSession = await api.startSession(courseId, durationMinutes);
+      const newSession = await api.startSession(courseId, durationMinutes, data?.cohort);
       setShowDurationModal(false);
       onStartSessionSuccess(newSession.id);
     } catch (err: any) {
@@ -187,6 +194,13 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
         </div>
       </div>
 
+      <div className="bg-white border rounded-xl p-4 flex flex-wrap items-end gap-3">
+        <label className="text-sm">Selected cohort<select className="block border rounded-lg p-2 mt-1" value={data.cohort} onChange={e => {setSelectedCohort(e.target.value); fetchCourseData(e.target.value);}}><option value="">All cohorts / legacy</option>{data.cohorts.filter(Boolean).map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+        <button className="border rounded-lg px-4 py-2 text-sm" onClick={async () => {try {await api.downloadCsv(`/courses/${courseId}/registrations.csv?cohort=${encodeURIComponent(data.cohort)}`, "students.csv");} catch(err: any) {setRosterError(err.message);}}}>Export student CSV</button>
+        <span className="text-xs text-slate-500">Attendance sessions use the selected cohort.</span>
+      </div>
+      <CohortImport courseId={courseId} selectedCohort={data.cohort} onImported={async cohort => {setSelectedCohort(cohort); await fetchCourseData(cohort, true);}} />
+      {rosterError && activeTab !== "students" && <p role="alert" className="text-rose-700">{rosterError}</p>}
       {/* Navigation Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200">
         <button
@@ -301,12 +315,8 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button className="text-rose-700 mr-3" onClick={async (e) => {
-                            e.stopPropagation();
-                            if (!window.confirm("Delete this session and all its attendance records? This cannot be undone.")) return;
-                            try { await api.deleteSession(sess.id); await fetchCourseData(); }
-                            catch (err: any) { alert(err.message); }
-                          }}>Delete session</button>
+                          <button className="text-sky-700 mr-3" onClick={async e => {e.stopPropagation(); try {await api.downloadCsv(`/sessions/${sess.id}/export.csv`, "attendance.csv");} catch(err: any) {setRosterError(err.message);}}}>Export CSV</button>
+                          <button className="text-rose-700 mr-3" onClick={e => {e.stopPropagation(); setDeletingSession(sess.id);}}>Delete session</button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -334,7 +344,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
           <form className="p-4 space-y-3 border-b border-slate-200" onSubmit={async (e) => {
             e.preventDefault(); setSavingStudent(true); setRosterError("");
             try {
-              const student = await api.addRosterStudent(courseId, rosterForm.name, rosterForm.code, rosterForm.email);
+              const student = await api.addRosterStudent(courseId, rosterForm.name, rosterForm.code, rosterForm.email, data.cohort);
               setData(prev => prev ? { ...prev, students: [...prev.students, student] } : prev);
               setRosterForm({ name: "", code: "", email: "" });
             } catch (err: any) { setRosterError(err.message); }
@@ -384,7 +394,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
                   </tr>
                 ) : (
                   filteredStudents.map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50">
+                    <tr key={s.registration_id || s.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         {s.full_name}
                       </td>
@@ -395,6 +405,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
                         {s.email}
                       </td>
                       <td className="px-4 py-3 text-right">
+                        <button className="text-rose-700 mr-3" onClick={() => setRemoving(s)}>Remove student</button>
                         <button
                           onClick={() => onViewStudentProfile(s.id)}
                           className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-sky-50 hover:text-sky-700 text-slate-700 transition-colors"
@@ -411,6 +422,8 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
         </div>
       )}
 
+      {removing && <ActionConfirmation message={`Remove ${removing.full_name} from ${removing.cohort || data.cohort || "this course"}? Admins will be notified. Historical attendance remains available.`} onCancel={() => setRemoving(null)} onConfirm={async () => {await api.removeRosterStudent(courseId, removing.id, removing.cohort || data.cohort); await fetchCourseData(selectedCohort, true);}} />}
+      {deletingSession && <ActionConfirmation message="Delete this session and all its attendance records and desk submissions? This cannot be undone." onCancel={() => setDeletingSession(null)} onConfirm={async () => {await api.deleteSession(deletingSession); await fetchCourseData(selectedCohort, true);}} />}
       {/* Start Attendance Duration Configuration Modal */}
       {showDurationModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
