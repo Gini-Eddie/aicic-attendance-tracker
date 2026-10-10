@@ -10,7 +10,11 @@ Administrators can use **Switch to tutor view** in the navigation. Their account
 
 ## Uploading existing students
 
-Open a course and expand **Upload students from CSV or Excel**. Supply a cohort (for example `MATRIX`), a track abbreviation (`UI`, `AI`, `WEB`) and a file with `name,email` headings. `full_name`, `student_name` and `email_address` headings are also accepted. Excel uploads read the first worksheet of an `.xlsx` workbook. `.xls` files must be saved as `.xlsx` or CSV first.
+Only administrators can upload student files. Teachers can view and manage their assigned course rosters, but cannot upload CSV or Excel files, including through the API. As an admin, open a course and expand **Upload students from CSV or Excel**. Supply a cohort (for example `MATRIX`), a track abbreviation (`UI`, `AI`, `WEB`) and a file with `name,email` headings. `full_name`, `student_name` and `email_address` headings are also accepted. Excel uploads read the first worksheet of an `.xlsx` workbook. `.xls` files must be saved as `.xlsx` or CSV first.
+
+## Registration codes in Settings
+
+Administrators manage the admin master code and teacher invitation code under **Settings > Registration codes**. Select the code type and enter your own account password. The eye button reveals or hides the current code; the copy button copies it. Revealed codes are cleared after 60 seconds, when leaving the browser window, or when another admin changes them. Expand **Change registration code** to set a new code with an inline confirmation. Both new-code fields and stored codes have show/hide controls. Teacher accounts cannot view or change either shared code.
 
 Example:
 

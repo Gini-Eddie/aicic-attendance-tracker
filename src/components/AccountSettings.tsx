@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { api } from "../services/api";
 import { User } from "../types";
+import { InvitationSettings } from "./InvitationSettings";
+import { Settings2 } from "lucide-react";
 
 export function AccountSettings({ user, theme, onThemeChange, onSaved }: { user: User; theme: "light" | "dark"; onThemeChange: (theme: "light" | "dark") => void; onSaved: (user: User) => void }) {
   const [name, setName] = useState(user.name);
@@ -21,7 +23,7 @@ export function AccountSettings({ user, theme, onThemeChange, onSaved }: { user:
     } catch (err: any) { setError(err.message || "Could not save your profile."); }
     finally { setBusy(false); }
   };
-  return <section className="max-w-2xl mx-auto space-y-6"><h1 className="text-2xl font-bold text-slate-900">Settings</h1>
+  return <section className="max-w-3xl mx-auto space-y-6"><div className="flex items-center gap-4"><span className="p-3 rounded-2xl bg-sky-100 text-sky-700"><Settings2 className="w-6 h-6" /></span><div><h1 className="text-2xl font-bold tracking-tight text-slate-900">Settings</h1><p className="text-sm text-slate-500 mt-1">Manage your profile, appearance{user.role === "admin" ? " and registration codes" : ""}.</p></div></div>
     <div className="bg-white border border-slate-200 rounded-2xl p-6"><h2 className="font-bold text-slate-900">Appearance</h2><p className="text-sm text-slate-500 mt-1">Saved for your account on this browser.</p><div className="flex gap-3 mt-4">{(["light", "dark"] as const).map(value => <button key={value} type="button" aria-pressed={theme === value} onClick={() => onThemeChange(value)} className={`border rounded-lg px-5 py-2 ${theme === value ? "bg-sky-700 text-white border-sky-700" : "border-slate-300 text-slate-700"}`}>{value === "light" ? "Light" : "Dark"}</button>)}</div></div>
     <form onSubmit={save} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4"><h2 className="font-bold text-slate-900">Your profile</h2><p className="text-xs text-slate-500">Account type: {user.role}. Enter your current password to save changes.</p>
       <label className="block text-sm text-slate-700">Full name<input disabled={busy} required minLength={2} maxLength={255} autoComplete="name" value={name} onChange={e => setName(e.target.value)} className="block mt-1 w-full border border-slate-300 rounded-lg p-2 bg-white" /></label>
@@ -32,5 +34,6 @@ export function AccountSettings({ user, theme, onThemeChange, onSaved }: { user:
       {error && <p role="alert" className="text-rose-700 text-sm">{error}</p>}{message && <p role="status" className="text-emerald-700 text-sm">{message}</p>}
       <button disabled={busy} className="bg-sky-700 text-white px-5 py-2 rounded-lg disabled:opacity-50">{busy ? "Saving..." : "Save profile"}</button>
     </form>
+    {user.role === "admin" && <InvitationSettings />}
   </section>;
 }

@@ -3,7 +3,6 @@ import { ActionConfirmation } from "./ActionConfirmation";
 import { api } from "../services/api";
 import { AdminDashboardData, Course, Student, User } from "../types";
 import { GroupedStudents } from "./GroupedStudents";
-import { InvitationSettings } from "./InvitationSettings";
 import { 
   Users, 
   GraduationCap, 
@@ -192,7 +191,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="space-y-8 pb-12">
-      <InvitationSettings />
       {/* Top Banner & Quick Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>

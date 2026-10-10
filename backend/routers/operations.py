@@ -35,7 +35,7 @@ def csv_response(filename, headers, rows):
 
 @router.post("/courses/{course_id}/import")
 def import_students(course_id: str, file: UploadFile = File(...), cohort: str = Form(...), track: str = Form(...),
-                          user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+                          user: User = Depends(require_admin), db: Session = Depends(get_db)):
     require_course_access(db, user, course_id)
     cohort = cohort_key(cohort)
     if not cohort or len(cohort) > 255:

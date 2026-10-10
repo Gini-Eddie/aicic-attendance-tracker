@@ -199,7 +199,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
         <button className="border rounded-lg px-4 py-2 text-sm" onClick={async () => {try {await api.downloadCsv(`/courses/${courseId}/registrations.csv?cohort=${encodeURIComponent(data.cohort)}`, "students.csv");} catch(err: any) {setRosterError(err.message);}}}>Export student CSV</button>
         <span className="text-xs text-slate-500">Attendance sessions use the selected cohort.</span>
       </div>
-      <CohortImport courseId={courseId} selectedCohort={data.cohort} onImported={async cohort => {setSelectedCohort(cohort); await fetchCourseData(cohort, true);}} />
+      {api.getUser()?.role === "admin" && <CohortImport courseId={courseId} selectedCohort={data.cohort} onImported={async cohort => {setSelectedCohort(cohort); await fetchCourseData(cohort, true);}} />}
       {rosterError && activeTab !== "students" && <p role="alert" className="text-rose-700">{rosterError}</p>}
       {/* Navigation Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200">

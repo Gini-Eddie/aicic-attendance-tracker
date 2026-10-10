@@ -245,7 +245,7 @@ class RouteTests(unittest.TestCase):
         failures.clear()
 
 
-    def upload(self, content=b"name,email\nFirst Student,first@example.com\n", cohort="MATRIX", track="UI", course="course", user="teacher", filename="students.csv"):
+    def upload(self, content=b"name,email\nFirst Student,first@example.com\n", cohort="MATRIX", track="UI", course="course", user="admin", filename="students.csv"):
         boundary = "test-import-boundary"
         data = (f'--{boundary}\r\nContent-Disposition: form-data; name="cohort"\r\n\r\n{cohort}\r\n'
                 f'--{boundary}\r\nContent-Disposition: form-data; name="track"\r\n\r\n{track}\r\n'
@@ -271,7 +271,7 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(len(roster["students"]), 1)
         self.assertEqual(roster["students"][0]["student_code"], "NEXT-UI-001")
         self.assertEqual(len(roster["cohorts"]), 2)
-        self.assertEqual(self.upload(course="other")[0], 403)
+        self.assertEqual(self.upload(course="other", user="teacher")[0], 403)
         self.assertEqual(self.upload(b"wrong,columns\nA,B\n")[0], 400)
         status, session = self.request("POST", "/api/courses/course/sessions", {"cohort": "NEXT"}, user="teacher")
         self.assertEqual(status, 201, session)
@@ -356,6 +356,23 @@ class RouteTests(unittest.TestCase):
         session = self.request("POST", "/api/courses/other/sessions")[1]
         for suffix in ("", "/attendance", "/export.csv"):
             self.assertEqual(self.request("GET", f'/api/sessions/{session["id"]}{suffix}', user="teacher")[0], 403)
+
+    def test_only_admins_can_upload_students(self):
+        from io import BytesIO
+        from openpyxl import Workbook
+        self.assertEqual(self.upload(user="teacher")[0], 403)
+        self.assertIn(self.upload(user=None)[0], (401, 403))
+        workbook = Workbook()
+        workbook.active.append(["name", "email"])
+        workbook.active.append(["Workbook Student", "workbook@example.com"])
+        output = BytesIO(); workbook.save(output); workbook.close()
+        self.assertEqual(self.upload(output.getvalue(), filename="students.xlsx", user="teacher")[0], 403)
+        with self.factory() as db:
+            self.assertEqual(db.query(Student).count(), 1)
+        status, report = self.upload()
+        self.assertEqual(status, 200, report)
+        self.assertEqual(len(report["created"]), 1)
+        self.assertEqual(self.request("GET", "/api/courses/course", user="teacher")[1]["students"][0]["student_code"], "MATRIX-UI-001")
 
     def test_legacy_enrollment_cohort_isolation(self):
         self.request("PATCH", "/api/courses/course/cohort", {"cohort": "MATRIX"})
