@@ -329,6 +329,9 @@ class ApiClient {
   async removeRosterStudent(courseId: string, studentId: string, cohort: string) {
     return this.request(`/api/courses/${courseId}/roster/${studentId}?cohort=${encodeURIComponent(cohort)}`, {method: "DELETE"});
   }
+  async deleteCohort(courseId: string, cohort: string) {
+    return this.request(`/api/courses/${courseId}/cohorts?cohort=${encodeURIComponent(cohort)}`, {method: "DELETE"});
+  }
   async getStaff(): Promise<User[]> { return this.request("/api/staff"); }
   async deleteTeacher(id: string) { return this.request(`/api/teachers/${id}`, {method: "DELETE"}); }
   async getNotifications(): Promise<AdminNotice[]> { return this.request("/api/notifications"); }

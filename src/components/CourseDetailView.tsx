@@ -45,6 +45,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
   const [selectedCohort, setSelectedCohort] = useState<string | undefined>();
   const [removing, setRemoving] = useState<Student | null>(null);
   const [deletingSession, setDeletingSession] = useState<string | null>(null);
+  const [deletingCohort, setDeletingCohort] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"history" | "students">("history");
   const [studentSearch, setStudentSearch] = useState("");
@@ -56,7 +57,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
   const [durationMinutes, setDurationMinutes] = useState(10);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchCourseData = async (cohort = selectedCohort, background = false) => {
+  const fetchCourseData = async (cohort?: string, background = false) => {
     try {
       if (!background) setLoading(true);
       setError(null);
@@ -198,6 +199,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
         <label className="text-sm">Selected cohort<select className="block border rounded-lg p-2 mt-1" value={data.cohort} onChange={e => {setSelectedCohort(e.target.value); fetchCourseData(e.target.value);}}><option value="">All cohorts / legacy</option>{data.cohorts.filter(Boolean).map(c => <option key={c} value={c}>{c}</option>)}</select></label>
         <button className="border rounded-lg px-4 py-2 text-sm" onClick={async () => {try {await api.downloadCsv(`/courses/${courseId}/registrations.csv?cohort=${encodeURIComponent(data.cohort)}`, "students.csv");} catch(err: any) {setRosterError(err.message);}}}>Export student CSV</button>
         <span className="text-xs text-slate-500">Attendance sessions use the selected cohort.</span>
+        {data.cohort && <button type="button" className="text-rose-700 border border-rose-200 rounded-lg px-4 py-2 text-sm" onClick={() => setDeletingCohort(true)}>Delete this cohort</button>}
       </div>
       {api.getUser()?.role === "admin" && <CohortImport courseId={courseId} selectedCohort={data.cohort} onImported={async cohort => {setSelectedCohort(cohort); await fetchCourseData(cohort, true);}} />}
       {rosterError && activeTab !== "students" && <p role="alert" className="text-rose-700">{rosterError}</p>}
@@ -422,7 +424,8 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
         </div>
       )}
 
-      {removing && <ActionConfirmation message={`Remove ${removing.full_name} from ${removing.cohort || data.cohort || "this course"}? Admins will be notified. Historical attendance remains available.`} onCancel={() => setRemoving(null)} onConfirm={async () => {await api.removeRosterStudent(courseId, removing.id, removing.cohort || data.cohort); await fetchCourseData(selectedCohort, true);}} />}
+      {removing && <ActionConfirmation message={`Permanently remove ${removing.full_name} from ${removing.cohort || data.cohort || "this course"}, including this registration's attendance? Other enrollments remain. Admins will be notified.`} onCancel={() => setRemoving(null)} onConfirm={async () => {await api.removeRosterStudent(courseId, removing.id, removing.cohort || data.cohort); await fetchCourseData(selectedCohort, true);}} />}
+      {deletingCohort && <ActionConfirmation message={`Permanently delete cohort ${data.cohort} from ${course.name}, including its student registrations, attendance sessions and records? Other courses and cohorts remain. Admins will be notified. This cannot be undone.`} onCancel={() => setDeletingCohort(false)} onConfirm={async () => {await api.deleteCohort(courseId, data.cohort); setSelectedCohort(undefined); await fetchCourseData(undefined, true);}} />}
       {deletingSession && <ActionConfirmation message="Delete this session and all its attendance records and desk submissions? This cannot be undone." onCancel={() => setDeletingSession(null)} onConfirm={async () => {await api.deleteSession(deletingSession); await fetchCourseData(selectedCohort, true);}} />}
       {/* Start Attendance Duration Configuration Modal */}
       {showDurationModal && (

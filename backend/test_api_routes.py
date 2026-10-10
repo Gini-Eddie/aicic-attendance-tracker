@@ -302,13 +302,14 @@ class RouteTests(unittest.TestCase):
         self.assertIn("Admin/company laptop", self.request("GET", f"/api/sessions/{sid}/export.csv")[1])
         student = self.request("GET", "/api/courses/course?cohort=MATRIX")[1]["students"][0]
         self.assertEqual(self.request("DELETE", f'/api/courses/course/roster/{student["id"]}?cohort=MATRIX', user="teacher")[0], 200)
-        self.assertIn("First Student", self.request("GET", f"/api/sessions/{sid}/export.csv")[1])
+        self.assertNotIn("First Student", self.request("GET", f"/api/sessions/{sid}/export.csv")[1])
+        self.assertFalse(any(s["id"] == student["id"] for s in self.request("GET", "/api/students")[1]))
         notices = self.request("GET", "/api/notifications")[1]
         self.assertIn("Teacher removed First Student", notices[0]["message"])
         self.assertEqual(self.request("POST", f'/api/notifications/{notices[0]["id"]}/read')[0], 200)
         self.assertTrue(self.request("GET", "/api/notifications")[1][0]["read"])
         self.assertEqual(self.request("GET", "/api/notifications", user="teacher")[0], 403)
-        self.assertEqual(len(self.upload()[1]["skipped"]), 1)
+        self.assertEqual(len(self.upload()[1]["created"]), 1)
         self.assertEqual(self.request("DELETE", f"/api/sessions/{sid}")[0], 200)
 
     def test_admin_tutor_and_teacher_deletion(self):
@@ -339,10 +340,66 @@ class RouteTests(unittest.TestCase):
         student = self.request("GET", "/api/courses/course?cohort=MATRIX")[1]["students"][0]
         self.request("DELETE", f'/api/courses/course/roster/{student["id"]}?cohort=MATRIX', user="teacher")
         self.assertEqual(len(self.request("GET", "/api/courses/course?cohort=NEXT")[1]["students"]), 1)
-        self.assertEqual(self.request("POST", f'/api/pending-attendance/{entry["id"]}/verify', {"approve": True}, user="teacher")[0], 409)
-        self.assertEqual(self.request("POST", f'/api/pending-attendance/{entry["id"]}/verify', {"approve": False}, user="teacher")[0], 200)
+        self.assertEqual(self.request("POST", f'/api/pending-attendance/{entry["id"]}/verify', {"approve": True}, user="teacher")[0], 404)
+        self.assertEqual(self.request("POST", f'/api/pending-attendance/{entry["id"]}/verify', {"approve": False}, user="teacher")[0], 404)
         self.assertEqual(self.request("GET", f'/api/sessions/{session["id"]}/attendance')[1]["checked_in_count"], 0)
-        self.assertIn("rejected", self.request("GET", f'/api/sessions/{session["id"]}/export.csv')[1])
+        self.assertNotIn("First Student", self.request("GET", f'/api/sessions/{session["id"]}/export.csv')[1])
+
+    def test_teacher_deletes_cohort_preserving_other_memberships(self):
+        from .models import AttendanceRecord, StudentRegistration
+        self.upload(); self.upload(cohort="NEXT"); self.upload(course="other", track="AI")
+        matrix = self.request("POST", "/api/courses/course/sessions", {"cohort": "MATRIX"}, user="teacher")[1]
+        next_session = self.request("POST", "/api/courses/course/sessions", {"cohort": "NEXT"}, user="teacher")[1]
+        self.request("POST", f'/api/attendance/{matrix["token"]}/check-in', {"student_code": "MATRIX-UI-001"}, user=None)
+        self.request("POST", f'/api/attendance/{next_session["token"]}/check-in', {"student_code": "NEXT-UI-001"}, user=None)
+        self.assertEqual(self.request("DELETE", "/api/courses/other/cohorts?cohort=MATRIX", user="teacher")[0], 403)
+        self.assertEqual(self.request("DELETE", "/api/courses/course/cohorts?cohort=", user="teacher")[0], 400)
+        self.assertIn(self.request("DELETE", "/api/courses/course/cohorts?cohort=MATRIX", user=None)[0], (401, 403))
+        status, result = self.request("DELETE", "/api/courses/course/cohorts?cohort=MATRIX", user="teacher")
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["deleted_students"], 1)
+        self.assertEqual(self.request("GET", f'/api/sessions/{matrix["id"]}')[0], 404)
+        self.assertEqual(self.request("GET", f'/api/sessions/{next_session["id"]}')[1]["checked_in_count"], 1)
+        course = self.request("GET", "/api/courses/course")[1]
+        self.assertEqual(course["cohort"], "NEXT")
+        self.assertNotIn("MATRIX", course["cohorts"])
+        self.assertEqual(self.request("POST", "/api/courses/course/sessions", {"cohort": "MATRIX"}, user="teacher")[0], 404)
+        self.assertEqual(self.request("GET", "/api/courses/other")[1]["students"][0]["student_code"], "MATRIX-AI-001")
+        self.assertIn("Teacher deleted cohort MATRIX", self.request("GET", "/api/notifications")[1][0]["message"])
+        with self.factory() as db:
+            self.assertEqual(db.query(StudentRegistration).filter_by(course_id="course", cohort="MATRIX").count(), 0)
+            self.assertEqual(db.query(AttendanceRecord).count(), 1)
+        self.request("DELETE", "/api/courses/course/cohorts?cohort=NEXT", user="teacher")
+        self.assertEqual(self.request("GET", "/api/courses/course")[1]["students"], [])
+        self.request("DELETE", "/api/courses/other/cohorts?cohort=MATRIX")
+        with self.factory() as db:
+            self.assertIsNone(db.query(Student).filter_by(email="first@example.com").first())
+
+    def test_training_reset_preserves_accounts_and_settings(self):
+        from .models import InvitationSetting, AdminNotification, CourseCohort
+        from .reset_training_data import reset_training_data
+        self.upload()
+        session = self.request("POST", "/api/courses/course/sessions", {"cohort": "MATRIX"}, user="teacher")[1]
+        self.request("POST", "/api/desk/check-in", {"session_id": session["id"], "student_code": "MATRIX-UI-001"})
+        with self.factory() as db:
+            db.add(InvitationSetting(kind="admin", code_hash="keep-hash", encrypted_code="keep-encrypted"))
+            db.add(AdminNotification(message="Keep audit history"))
+            db.commit()
+        with self.engine.begin() as connection:
+            preview = reset_training_data(connection)
+            self.assertFalse(preview["executed"])
+            self.assertEqual(preview["before"]["courses"], 2)
+        with self.engine.begin() as connection:
+            result = reset_training_data(connection, execute=True)
+            self.assertFalse(any(result["after"].values()))
+            self.assertEqual(result["preserved"]["users"], 2)
+        with self.factory() as db:
+            self.assertEqual(db.get(InvitationSetting, "admin").code_hash, "keep-hash")
+            self.assertEqual(db.query(User).count(), 2)
+            self.assertEqual(db.query(Course).count(), 0)
+            self.assertEqual(db.query(Student).count(), 0)
+            self.assertEqual(db.query(CourseCohort).count(), 0)
+        self.assertEqual(self.request("GET", "/api/auth/me")[0], 200)
 
     def test_export_safety_limits_and_course_privacy(self):
         status, report = self.upload(b'name,email\n"=SUM(1,2)",formula@example.com\n')

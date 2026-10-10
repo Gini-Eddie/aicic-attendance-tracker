@@ -51,6 +51,8 @@ def add_roster_student(course_id: str, data: RosterStudentCreate, current_user: 
     if not db.query(Enrollment).filter_by(course_id=course_id, student_id=student.id).first():
         db.add(Enrollment(course_id=course_id, student_id=student.id))
     db.add(StudentRegistration(student_id=student.id, course_id=course_id, cohort=selected, code=code))
+    if selected and not db.get(CourseCohort, course_id):
+        db.add(CourseCohort(course_id=course_id, name=selected))
     try:
         db.commit()
     except IntegrityError:

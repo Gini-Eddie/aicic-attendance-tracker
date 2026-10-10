@@ -26,11 +26,17 @@ Emeka Example,emeka@example.com
 
 Files may contain up to 1,000 data rows and 2 MB. Expanded Excel workbooks are limited to 20 MB. Invalid rows are reported without importing them; valid rows are saved together. A database conflict rolls back the whole upload so it can be retried.
 
-Numbers such as `MATRIX-UI-001` are generated after the highest existing suffix for that prefix. Previously issued numbers, including removed registrations, are reserved. The same email within the same course and cohort is skipped. The same email may have separate registrations in other courses or cohorts; its existing name is retained. Removed registrations are skipped too, preventing an old upload from silently reinstating a removed student.
+Numbers such as `MATRIX-UI-001` are generated after the highest existing suffix for that prefix. The same email within the same course and cohort is skipped. The same email may have separate registrations in other courses or cohorts; its existing name is retained. Permanent deletion releases that registration, so a later admin upload can register the student again.
 
 The first imported cohort becomes the current cohort only if the course has no cohort setting. Subsequent imports retain the existing current cohort. Use the cohort selector to view rosters and start a session for a particular cohort. Export the selected roster using **Export student CSV**.
 
-Removing a student affects that course/cohort registration, preserves other registrations and historical attendance, and creates a notification visible to every admin. Read status is separate for each admin.
+Removing a student permanently deletes that course/cohort registration and its attendance data. Other enrollments are preserved. If the student has no remaining enrollments, their identity is deleted too; they do not move into an unassigned group. Every admin receives a notification, with separate read status for each admin. The admin **Register Student** form now requires a course and cohort and enrolls the student immediately.
+
+Teachers can select a named cohort in an assigned course and click **Delete this cohort**. After confirmation, its registrations, attendance sessions and records are permanently removed and admins are notified. Other courses and cohorts are preserved; the course itself remains. When deleting the current cohort, the next remaining cohort becomes current, or the current-cohort setting is cleared if none remain.
+
+## One-time blank start
+
+`python -m backend.reset_training_data` previews training-data counts in the configured database. `python -m backend.reset_training_data --execute` permanently clears courses, cohorts, students, enrollments, course assignments and all attendance/session data in one verified transaction. Staff accounts, invitation settings and admin notifications are preserved. This runs only when explicitly invoked; deployment and application startup never run it.
 
 ## Company laptop attendance
 

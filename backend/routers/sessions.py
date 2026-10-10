@@ -7,7 +7,7 @@ from ..models import User, Course, TeacherCourse, Enrollment, AttendanceSession,
 from ..schemas import SessionCreate, SessionResponse
 from ..auth import get_current_user, require_teacher
 from ..permissions import require_course_access
-from ..registration import roster, attendance_roster, current_cohort, cohort_key, session_cohort
+from ..registration import roster, attendance_roster, current_cohort, cohort_key, session_cohort, lock_registration_writes
 from ..models import SessionCohort, PendingAttendance, StudentRegistration
 
 router = APIRouter(prefix="/sessions", tags=["Attendance Sessions"])
@@ -44,6 +44,7 @@ def delete_attendance(session_id: str, student_id: str, current_user: User = Dep
 
 @router.post("/course/{course_id}", response_model=SessionResponse, status_code=201)
 def start_session(course_id: str, data: SessionCreate, current_user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+    lock_registration_writes(db)
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
@@ -57,6 +58,8 @@ def start_session(course_id: str, data: SessionCreate, current_user: User = Depe
             raise HTTPException(status_code=403, detail="Cannot start attendance for unassigned course")
 
     selected = current_cohort(db, course_id) if data.cohort is None else cohort_key(data.cohort)
+    if selected and selected != current_cohort(db, course_id) and not db.query(StudentRegistration).filter_by(course_id=course_id, cohort=selected).first():
+        raise HTTPException(404, "Cohort does not exist in this course.")
     if not selected and any(r[0] for r in db.query(StudentRegistration.cohort).filter_by(course_id=course_id)):
         raise HTTPException(400, "Choose a cohort before starting attendance.")
     for previous in db.query(AttendanceSession).filter_by(course_id=course_id, status="active").all():

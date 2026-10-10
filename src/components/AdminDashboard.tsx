@@ -59,7 +59,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Form states
   const [courseForm, setCourseForm] = useState({ name: "", description: "", cohort: "" });
   const [teacherForm, setTeacherForm] = useState({ name: "", email: "", password: "" });
-  const [studentForm, setStudentForm] = useState({ fullName: "", email: "", studentCode: "" });
+  const [studentForm, setStudentForm] = useState({ fullName: "", email: "", studentCode: "", courseId: "", cohort: "" });
   const [enrollForm, setEnrollForm] = useState({ courseId: "", studentId: "" });
   const [assignForm, setAssignForm] = useState({ courseId: "", teacherId: "" });
 
@@ -124,13 +124,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentForm.fullName || !studentForm.email || !studentForm.studentCode) return;
+    if (!studentForm.fullName || !studentForm.email || !studentForm.studentCode || !studentForm.courseId) return;
     setSubmitting(true);
     try {
-      const student = await api.createStudent(studentForm.fullName, studentForm.email, studentForm.studentCode);
-      setStudents(prev => [...prev, { ...student, courses: [], total_sessions: 0, attended_sessions: 0, attendance_rate: 100 }]);
-      setDashboardData(prev => prev ? { ...prev, stats: { ...prev.stats, total_students: prev.stats.total_students + 1 } } : prev);
-      setStudentForm({ fullName: "", email: "", studentCode: "" });
+      const student = await api.addRosterStudent(studentForm.courseId, studentForm.fullName, studentForm.studentCode, studentForm.email, studentForm.cohort);
+      const course = courses.find(c => c.id === studentForm.courseId)!;
+      setStudents(prev => [...prev.filter(s => s.id !== student.id), { ...student, courses: [...(prev.find(s => s.id === student.id)?.courses || []).filter(c => c.id !== course.id), {id: course.id, name: course.name}], registrations: [...(prev.find(s => s.id === student.id)?.registrations || []), {course_id: course.id, cohort: studentForm.cohort.toUpperCase(), student_code: student.student_code}], total_sessions: 0, attended_sessions: 0, attendance_rate: 100 }]);
+      if (!students.some(s => s.id === student.id)) setDashboardData(prev => prev ? { ...prev, stats: { ...prev.stats, total_students: prev.stats.total_students + 1 } } : prev);
+      setStudentForm({ fullName: "", email: "", studentCode: "", courseId: "", cohort: "" });
       setShowStudentModal(false);
     } catch (err: any) {
       alert(err.message || "Failed to create student");
@@ -735,8 +736,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
             <h3 className="text-lg font-bold text-slate-900 mb-1">Register Student</h3>
-            <p className="text-xs text-slate-500 mb-4">Assign an official student identification code</p>
+            <p className="text-xs text-slate-500 mb-4">Register and enroll the student in a course and cohort together.</p>
             <form onSubmit={handleCreateStudent} className="space-y-3">
+              <label className="block text-sm">Course<select required value={studentForm.courseId} onChange={e => {const course = courses.find(c => c.id === e.target.value); setStudentForm({...studentForm, courseId: e.target.value, cohort: course?.cohort || ""});}} className="block w-full border border-slate-300 rounded-lg p-2"><option value="">Choose a course</option>{courses.map(course => <option key={course.id} value={course.id}>{course.name}</option>)}</select></label>
+              <label className="block text-sm">Cohort<input required maxLength={255} value={studentForm.cohort} onChange={e => setStudentForm({...studentForm, cohort: e.target.value})} className="block w-full border border-slate-300 rounded-lg p-2" placeholder="MATRIX" /></label>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                   Full Name

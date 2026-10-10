@@ -15,6 +15,7 @@ from ..auth import require_admin, require_teacher
 from ..permissions import require_course_access
 from ..registration import attendance_roster, roster, cohort_key, current_cohort, resolve_student, session_cohort, lock_registration_writes
 from typing import Optional
+from ..roster_deletion import delete_registration_data
 from ..models import (User, Student, Course, Enrollment, TeacherCourse, AttendanceSession, AttendanceRecord,
                       StudentRegistration, DeletedRegistration, PendingAttendance, AdminNotification,
                       NotificationRead, DeletedUser, SessionCohort, CourseCohort)
@@ -167,6 +168,7 @@ def export_roster(course_id: str, cohort: Optional[str] = None, user: User = Dep
 @router.delete("/courses/{course_id}/roster/{student_id}")
 def remove_student(course_id: str, student_id: str, cohort: str = "", user: User = Depends(require_teacher), db: Session = Depends(get_db)):
     require_course_access(db, user, course_id)
+    lock_registration_writes(db)
     student = db.get(Student, student_id)
     if not student:
         raise HTTPException(404, "Student not found")
@@ -176,16 +178,48 @@ def remove_student(course_id: str, student_id: str, cohort: str = "", user: User
     enrollment = db.query(Enrollment).filter(Enrollment.student_id == student_id, Enrollment.course_id == course_id).first()
     if registrations and not targets or not registrations and not enrollment:
         raise HTTPException(404, "Student registration not found in this cohort")
-    for item in targets:
-        db.add(DeletedRegistration(registration_id=item.id))
-    db.flush()
-    active = [r for r in registrations if not db.get(DeletedRegistration, r.id)]
-    if enrollment and not active:
-        db.delete(enrollment)
     course = db.get(Course, course_id)
-    db.add(AdminNotification(message=f"{user.name} removed {student.full_name} ({student.email}) from {course.name}, cohort {selected or 'legacy'}. Historical attendance was retained."))
+    message = f"{user.name} removed {student.full_name} ({student.email}) from {course.name}, cohort {selected or 'legacy'}, including this registration's attendance data."
+    delete_registration_data(db, course_id, student_id, selected, targets)
+    db.add(AdminNotification(message=message))
     db.commit()
-    return {"message": "Student removed from this roster. Administrators have been notified; historical attendance is retained."}
+    return {"message": "Student registration and its attendance data deleted. Administrators have been notified."}
+
+
+@router.delete("/courses/{course_id}/cohorts")
+def delete_cohort(course_id: str, cohort: str, user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+    require_course_access(db, user, course_id)
+    course = db.get(Course, course_id)
+    lock_registration_writes(db)
+    selected = cohort_key(cohort)
+    if not selected:
+        raise HTTPException(400, "Select one named cohort to delete.")
+    registrations = db.query(StudentRegistration).filter_by(course_id=course_id, cohort=selected).all()
+    setting = db.get(CourseCohort, course_id)
+    is_current = bool(setting and cohort_key(setting.name) == selected)
+    sessions = db.query(AttendanceSession).filter_by(course_id=course_id).all()
+    session_ids = [s.id for s in sessions if session_cohort(db, s) == selected or (is_current and not session_cohort(db, s))]
+    if not registrations and not is_current and not session_ids:
+        raise HTTPException(404, "Cohort not found in this course.")
+    student_ids = {r.student_id for r in registrations}
+    if is_current:
+        registered_ids = {r[0] for r in db.query(StudentRegistration.student_id).filter_by(course_id=course_id)}
+        student_ids |= {e.student_id for e in db.query(Enrollment).filter_by(course_id=course_id) if e.student_id not in registered_ids}
+    for student_id in student_ids:
+        delete_registration_data(db, course_id, student_id, selected, [r for r in registrations if r.student_id == student_id])
+    db.query(PendingAttendance).filter(PendingAttendance.session_id.in_(session_ids)).delete(synchronize_session=False)
+    db.query(AttendanceRecord).filter(AttendanceRecord.session_id.in_(session_ids)).delete(synchronize_session=False)
+    db.query(SessionCohort).filter(SessionCohort.session_id.in_(session_ids)).delete(synchronize_session=False)
+    db.query(AttendanceSession).filter(AttendanceSession.id.in_(session_ids)).delete(synchronize_session=False)
+    if is_current:
+        remaining = sorted({r[0] for r in db.query(StudentRegistration.cohort).filter_by(course_id=course_id) if r[0]})
+        if remaining:
+            setting.name = remaining[0]
+        else:
+            db.delete(setting)
+    db.add(AdminNotification(message=f"{user.name} deleted cohort {selected} from {course.name}, including {len(student_ids)} student registrations and {len(session_ids)} attendance sessions. Other courses and cohorts were preserved."))
+    db.commit()
+    return {"message": "Cohort and its student and attendance data deleted. Administrators have been notified.", "deleted_students": len(student_ids), "deleted_sessions": len(session_ids)}
 
 
 @router.get("/staff")
