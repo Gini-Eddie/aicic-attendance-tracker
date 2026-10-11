@@ -1,0 +1,35 @@
+name: Server keep-alive
+
+on:
+  schedule:
+    - cron: '3,13,23,33,43,53 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: server-keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping backend health endpoint
+        env:
+          HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$HEALTHCHECK_URL" != https://* ]]; then
+            echo 'Set the HEALTHCHECK_URL repository variable to your full HTTPS backend health URL.' >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location \
+            --proto '=https' --proto-redir '=https' \
+            --connect-timeout 15 --max-time 90 \
+            --retry 2 --retry-delay 5 --retry-max-time 240 \
+            --output /dev/null \
+            "$HEALTHCHECK_URL"
+          echo 'Backend health endpoint responded successfully.'

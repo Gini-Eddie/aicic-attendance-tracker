@@ -8,6 +8,9 @@ A full-stack web application designed to streamline physical classroom verificat
 *   **Authentication:** JWT (JSON Web Tokens) with Bcrypt password hashing
 
 ## Features
+
+For scheduled backend pings every ten minutes, see [Server keep-alive](docs/keep-alive.md).
+
 *   **Role-Based Access:** Distinct portals for Administrators and Teachers.
 *   **Live Attendance:** Instructors can generate temporary QR codes and links for physical check-ins.
 *   **Real-Time Metrics:** Live polling updates the dashboard automatically as students scan and check-in.
