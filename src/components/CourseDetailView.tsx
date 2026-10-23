@@ -20,6 +20,7 @@ import {
 
 interface CourseDetailViewProps {
   courseId: string;
+  refreshTrigger?: number;
   onBack: () => void;
   onStartSessionSuccess: (sessionId: string) => void;
   onViewSessionDetail: (sessionId: string) => void;
@@ -28,6 +29,7 @@ interface CourseDetailViewProps {
 
 export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
   courseId,
+  refreshTrigger = 0,
   onBack,
   onStartSessionSuccess,
   onViewSessionDetail,
@@ -73,6 +75,12 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
   useEffect(() => {
     fetchCourseData();
   }, [courseId]);
+
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      fetchCourseData(selectedCohort, true);
+    }
+  }, [refreshTrigger]);
 
   const handleStartAttendance = async () => {
     setStartingSession(true);
@@ -235,7 +243,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
             <div>
               <h3 className="font-bold text-sm text-slate-900">Previous Attendance Sessions</h3>
-              <p className="text-xs text-slate-500">Click any session row to inspect student attendance</p>
+              <p className="text-xs text-slate-500">Click any session row to inspect or edit student attendance</p>
             </div>
             {sessions.length > 0 && (
               <span className="text-xs text-slate-500">

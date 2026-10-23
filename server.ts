@@ -915,6 +915,150 @@ async function startServer() {
     res.json({ message: "Attendance session closed successfully", session });
   });
 
+  // Update Session: PATCH /api/sessions/:id
+  app.patch("/api/sessions/:id", authMiddleware, (req, res) => {
+    const authUser = (req as any).user as AuthUser;
+    const { id } = req.params;
+    const { starts_at, expires_at, status } = req.body;
+
+    const session = dbManager.db.attendance_sessions.find(s => s.id === id);
+    if (!session) return res.status(404).json({ detail: "Session not found" });
+
+    if (authUser.role === "teacher") {
+      const isAssigned = dbManager.db.teacher_courses.some(
+        tc => tc.teacher_id === authUser.id && tc.course_id === session.course_id
+      );
+      if (!isAssigned) {
+        return res.status(403).json({ detail: "Course not assigned to you" });
+      }
+    }
+
+    const oldDuration = new Date(session.expires_at).getTime() - new Date(session.starts_at).getTime();
+    if (starts_at) {
+      const parsedStart = new Date(starts_at);
+      if (isNaN(parsedStart.getTime())) {
+        return res.status(400).json({ detail: "Invalid session start date" });
+      }
+      session.starts_at = parsedStart.toISOString();
+      if (!expires_at) {
+        session.expires_at = new Date(parsedStart.getTime() + (oldDuration > 0 ? oldDuration : 10 * 60 * 1000)).toISOString();
+      }
+    }
+    if (expires_at) {
+      const parsedExp = new Date(expires_at);
+      if (isNaN(parsedExp.getTime())) {
+        return res.status(400).json({ detail: "Invalid session expiration date" });
+      }
+      session.expires_at = parsedExp.toISOString();
+    }
+    if (status && ["active", "closed", "expired"].includes(status)) {
+      session.status = status;
+    }
+
+    dbManager.save();
+    res.json({ message: "Attendance session updated", session });
+  });
+
+  // Update Student Attendance Record: PUT or PATCH /api/sessions/:id/attendance/:studentId
+  const handleUpdateAttendanceRecord = (req: express.Request, res: express.Response) => {
+    const authUser = (req as any).user as AuthUser;
+    const { id, studentId } = req.params;
+    const { status, checked_in_at } = req.body;
+
+    const session = dbManager.db.attendance_sessions.find(s => s.id === id);
+    if (!session) return res.status(404).json({ detail: "Session not found" });
+
+    if (authUser.role === "teacher") {
+      const isAssigned = dbManager.db.teacher_courses.some(
+        tc => tc.teacher_id === authUser.id && tc.course_id === session.course_id
+      );
+      if (!isAssigned) {
+        return res.status(403).json({ detail: "Course not assigned to you" });
+      }
+    }
+
+    const student = dbManager.db.students.find(s => s.id === studentId);
+    if (!student) return res.status(404).json({ detail: "Student not found" });
+
+    const isEnrolled = dbManager.db.enrollments.some(
+      e => e.course_id === session.course_id && e.student_id === studentId
+    );
+    if (!isEnrolled) {
+      return res.status(403).json({ detail: "Student is not enrolled in this course" });
+    }
+
+    const normalizedStatus = (status || "").trim().toLowerCase();
+    if (normalizedStatus !== "present" && normalizedStatus !== "absent") {
+      return res.status(400).json({ detail: "Status must be Present or Absent" });
+    }
+
+    const existingRecord = dbManager.db.attendance_records.find(
+      r => r.session_id === id && r.student_id === studentId
+    );
+
+    if (normalizedStatus === "present") {
+      const checkInIso = checked_in_at
+        ? new Date(checked_in_at).toISOString()
+        : (existingRecord ? existingRecord.checked_in_at : session.starts_at || new Date().toISOString());
+
+      if (existingRecord) {
+        existingRecord.checked_in_at = checkInIso;
+      } else {
+        dbManager.db.attendance_records.push({
+          id: "ar-" + Date.now().toString(36) + "-" + Math.random().toString(36).substring(2, 6),
+          session_id: id,
+          student_id: studentId,
+          checked_in_at: checkInIso
+        });
+      }
+      dbManager.save();
+      return res.json({
+        message: "Attendance record updated",
+        student_id: studentId,
+        status: "Present",
+        checked_in_at: checkInIso
+      });
+    } else {
+      dbManager.db.attendance_records = dbManager.db.attendance_records.filter(
+        r => !(r.session_id === id && r.student_id === studentId)
+      );
+      dbManager.save();
+      return res.json({
+        message: "Attendance record updated",
+        student_id: studentId,
+        status: "Absent",
+        checked_in_at: null
+      });
+    }
+  };
+
+  app.put("/api/sessions/:id/attendance/:studentId", authMiddleware, handleUpdateAttendanceRecord);
+  app.patch("/api/sessions/:id/attendance/:studentId", authMiddleware, handleUpdateAttendanceRecord);
+
+  // Delete Student Attendance Record: DELETE /api/sessions/:id/attendance/:studentId
+  app.delete("/api/sessions/:id/attendance/:studentId", authMiddleware, (req, res) => {
+    const authUser = (req as any).user as AuthUser;
+    const { id, studentId } = req.params;
+
+    const session = dbManager.db.attendance_sessions.find(s => s.id === id);
+    if (!session) return res.status(404).json({ detail: "Session not found" });
+
+    if (authUser.role === "teacher") {
+      const isAssigned = dbManager.db.teacher_courses.some(
+        tc => tc.teacher_id === authUser.id && tc.course_id === session.course_id
+      );
+      if (!isAssigned) {
+        return res.status(403).json({ detail: "Course not assigned to you" });
+      }
+    }
+
+    dbManager.db.attendance_records = dbManager.db.attendance_records.filter(
+      r => !(r.session_id === id && r.student_id === studentId)
+    );
+    dbManager.save();
+    res.json({ message: "Attendance record deleted" });
+  });
+
   // GET /api/sessions/:id
   app.get("/api/sessions/:id", authMiddleware, (req, res) => {
     const { id } = req.params;

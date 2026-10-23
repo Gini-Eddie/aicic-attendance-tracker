@@ -63,6 +63,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [inspectSessionId, setInspectSessionId] = useState<string | null>(null);
   const [inspectStudentId, setInspectStudentId] = useState<string | null>(null);
+  const [attendanceRefreshTrigger, setAttendanceRefreshTrigger] = useState(0);
 
   // Public Attendance Token (e.g. from URL path /attendance/:token)
   const [publicToken, setPublicToken] = useState<string | null>(attendanceTokenFromUrl);
@@ -129,6 +130,13 @@ export default function App() {
       setDashboardData(null);
     }
   }, [currentUser, activeView, viewMode]);
+
+  const handleAttendanceUpdated = () => {
+    setAttendanceRefreshTrigger((prev) => prev + 1);
+    if (currentUser && activeView === "dashboard" && effectiveRole === "teacher") {
+      fetchDashboard();
+    }
+  };
 
   const handleSignUp = async (name: string, email: string, pass: string, courseName: string, invitationCode: string, role: "admin" | "teacher") => {
     setLoginError(null);
@@ -285,6 +293,7 @@ export default function App() {
             {activeView === "course-detail" && selectedCourseId && (
               <CourseDetailView
                 courseId={selectedCourseId}
+                refreshTrigger={attendanceRefreshTrigger}
                 onBack={() => {
                   setSelectedCourseId(null);
                   setActiveView("dashboard");
@@ -300,6 +309,7 @@ export default function App() {
               <>
                 {effectiveRole === "admin" && (
                   <AdminDashboard
+                    key={`admin-dash-${attendanceRefreshTrigger}`}
                     onInspectSession={(sessId) => setInspectSessionId(sessId)}
                     onViewStudentProfile={(stuId) => setInspectStudentId(stuId)}
                     onSelectCourse={handleOpenCourse}
@@ -320,6 +330,7 @@ export default function App() {
             {/* Views 4+: Admin Direct Views (Courses, Teachers, Students) */}
             {effectiveRole === "admin" && (activeView === "courses" || activeView === "teachers" || activeView === "students") && (
               <AdminDashboard
+                key={`admin-tab-${activeView}-${attendanceRefreshTrigger}`}
                 initialTab={activeView as "courses" | "teachers" | "students"}
                 onInspectSession={(sessId) => setInspectSessionId(sessId)}
                 onViewStudentProfile={(stuId) => setInspectStudentId(stuId)}
@@ -357,6 +368,7 @@ export default function App() {
         <SessionHistoryDetailModal
           sessionId={inspectSessionId}
           onClose={() => setInspectSessionId(null)}
+          onUpdated={handleAttendanceUpdated}
           onViewStudentProfile={(studentId) => {
             setInspectSessionId(null);
             setInspectStudentId(studentId);
@@ -369,6 +381,7 @@ export default function App() {
           studentId={inspectStudentId}
           courseId={selectedCourseId || undefined}
           onClose={() => setInspectStudentId(null)}
+          onUpdated={handleAttendanceUpdated}
         />
       )}
     </div>

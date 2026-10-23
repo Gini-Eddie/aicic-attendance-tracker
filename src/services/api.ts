@@ -226,6 +226,27 @@ class ApiClient {
     return this.request(`/api/sessions/${sessionId}`, { method: "DELETE" });
   }
 
+  async updateSession(
+    sessionId: string,
+    payload: { starts_at?: string; expires_at?: string; status?: "active" | "closed" | "expired" }
+  ): Promise<{ message: string; session: AttendanceSession }> {
+    return this.request(`/api/sessions/${sessionId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async updateAttendance(
+    sessionId: string,
+    studentId: string,
+    payload: { status: "Present" | "Absent"; checked_in_at?: string | null }
+  ): Promise<{ message: string; student_id: string; status: "Present" | "Absent"; checked_in_at: string | null }> {
+    return this.request(`/api/sessions/${sessionId}/attendance/${studentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+  }
+
   async deleteAttendance(sessionId: string, studentId: string) {
     return this.request(`/api/sessions/${sessionId}/attendance/${studentId}`, { method: "DELETE" });
   }

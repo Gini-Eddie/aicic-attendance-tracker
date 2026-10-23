@@ -443,6 +443,67 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(len(report["skipped"]), 1)
         self.assertEqual(report["created"], [])
 
+    def test_tutor_edits_attendance_record_and_session(self):
+        self.request("POST", "/api/courses/course/students", {"student_id": "student"})
+        session = self.request("POST", "/api/courses/course/sessions", {"duration_minutes": 15}, user="teacher")[1]
+        sid = session["id"]
+        other_session = self.request("POST", "/api/courses/other/sessions", {"duration_minutes": 15})[1]
+
+        # Unassigned course is forbidden for teacher
+        self.assertEqual(
+            self.request("PATCH", f'/api/sessions/{other_session["id"]}', {"starts_at": "2026-09-10T09:00:00Z"}, user="teacher")[0],
+            403
+        )
+        self.assertEqual(
+            self.request("PATCH", f'/api/sessions/{other_session["id"]}/attendance/student', {"status": "Present"}, user="teacher")[0],
+            403
+        )
+
+        # Tutor updates session date/time
+        status, updated_sess = self.request("PATCH", f"/api/sessions/{sid}", {"starts_at": "2026-09-10T09:00:00Z"}, user="teacher")
+        self.assertEqual(status, 200, updated_sess)
+        self.assertTrue(updated_sess["session"]["starts_at"].startswith("2026-09-10T09:00:00"))
+        self.assertTrue(updated_sess["session"]["expires_at"].startswith("2026-09-10T09:15:00"))
+
+        # Tutor marks absent student Present with custom check-in timestamp
+        status, rec = self.request(
+            "PATCH",
+            f"/api/sessions/{sid}/attendance/student",
+            {"status": "Present", "checked_in_at": "2026-09-10T09:05:00Z"},
+            user="teacher"
+        )
+        self.assertEqual(status, 200, rec)
+        self.assertEqual(rec["status"], "Present")
+        self.assertTrue(rec["checked_in_at"].startswith("2026-09-10T09:05:00"))
+
+        # Verify session detail and student profile reflect the edit
+        detail = self.request("GET", f"/api/sessions/{sid}", user="teacher")[1]
+        self.assertEqual(detail["checked_in_count"], 1)
+        self.assertEqual(detail["student_breakdown"][0]["status"], "Present")
+        self.assertTrue(detail["student_breakdown"][0]["checked_in_at"].startswith("2026-09-10T09:05:00"))
+
+        # Tutor edits check-in timestamp on existing Present record
+        status, rec2 = self.request(
+            "PATCH",
+            f"/api/sessions/{sid}/attendance/student",
+            {"status": "Present", "checked_in_at": "2026-09-10T09:12:00Z"},
+            user="teacher"
+        )
+        self.assertEqual(status, 200, rec2)
+        self.assertTrue(rec2["checked_in_at"].startswith("2026-09-10T09:12:00"))
+
+        # Tutor changes status back to Absent
+        status, rec3 = self.request(
+            "PATCH",
+            f"/api/sessions/{sid}/attendance/student",
+            {"status": "Absent"},
+            user="teacher"
+        )
+        self.assertEqual(status, 200, rec3)
+        self.assertEqual(rec3["status"], "Absent")
+        self.assertIsNone(rec3["checked_in_at"])
+        self.assertEqual(self.request("GET", f"/api/sessions/{sid}", user="teacher")[1]["checked_in_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

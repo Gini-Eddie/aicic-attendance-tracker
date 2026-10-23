@@ -75,6 +75,15 @@ class SessionCreate(BaseModel):
     cohort: Optional[str] = Field(default=None, max_length=255)
     duration_minutes: Optional[int] = Field(default=10, ge=1, le=1440)
 
+class SessionUpdate(BaseModel):
+    starts_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    status: Optional[str] = Field(default=None, pattern="^(active|closed|expired)$")
+
+class AttendanceRecordUpdate(BaseModel):
+    status: str = Field(..., pattern="^(Present|Absent|present|absent)$")
+    checked_in_at: Optional[datetime] = None
+
 class SessionResponse(BaseModel):
     cohort: Optional[str] = None
     id: str
